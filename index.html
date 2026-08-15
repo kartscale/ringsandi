@@ -87,6 +87,13 @@ body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 .nav-btn .ic{width:18px;text-align:center;}
 .nav-btn:hover{background:var(--bg);color:var(--ink);}
 .nav-btn.active{background:var(--accent-soft);color:var(--accent);font-weight:600;}
+.nav-chevron{margin-left:auto;font-size:9px;color:var(--ink-faint);transition:transform .15s;}
+.nav-chevron.rotated{transform:rotate(180deg);}
+.nav-subgroup{display:none;flex-direction:column;margin:0 0 2px 30px;}
+.nav-subgroup.open{display:flex;}
+.nav-subbtn{text-align:left;border:none;background:none;padding:7px 10px;border-radius:8px;font-size:12.5px;color:var(--ink-faint);cursor:pointer;font-family:inherit;margin-bottom:1px;}
+.nav-subbtn:hover{background:var(--bg);color:var(--ink);}
+.nav-subbtn.active{color:var(--accent);font-weight:600;}
 .sidebar-foot{margin-top:auto;padding:14px 10px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink-faint);}
 .nav-group-push{margin-top:auto;}
 .logout-link{background:none;border:none;color:var(--ink-faint);font-size:12px;cursor:pointer;padding:0;margin-top:6px;text-decoration:underline;font-family:inherit;}
@@ -332,6 +339,15 @@ canvas{max-width:100%;}
 .creative-subtab-pane{display:none;}
 .creative-subtab-pane.active{display:block;}
 
+.creative-card{position:relative;}
+.creative-select-wrap{position:absolute;top:10px;right:10px;z-index:2;}
+.creative-select-box{width:17px;height:17px;cursor:pointer;accent-color:var(--accent);}
+.creative-select-bar{display:none;align-items:center;gap:10px;background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:14px;font-size:12.5px;color:var(--ink-soft);}
+.creative-select-bar .chip{border:1px solid var(--line);background:var(--panel);}
+.creative-select-bar .chip.good{background:var(--good-bg);color:var(--good);border-color:transparent;}
+.creative-select-bar .chip.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent;}
+.export-print-head{display:none;}
+
 /* ---- Goal tab ---- */
 .goal-input-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;}
 .goal-input-card{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px;}
@@ -365,6 +381,19 @@ canvas{max-width:100%;}
 .chat-input-row{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--line);flex-shrink:0;}
 .chat-input-row input{flex:1;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12.8px;font-family:inherit;}
 @media(max-width:520px){.chat-panel{right:10px;left:10px;width:auto;bottom:78px;}.chat-fab{right:14px;bottom:14px;}}
+
+/* ---- Creative export -> PDF (browser print/Save as PDF) ---- */
+@media print{
+  body *{visibility:hidden;}
+  #creativeExportPrintArea, #creativeExportPrintArea *{visibility:visible;}
+  #creativeExportPrintArea{position:absolute;left:0;top:0;width:100%;padding:20px;}
+  #creativeExportPrintArea .no-print{display:none;}
+  #creativeExportPrintArea .export-print-head{display:block;margin-bottom:16px;}
+  #creativeExportPrintArea .export-print-head h2{margin:0 0 4px;font-size:18px;}
+  #creativeExportPrintArea .export-print-head p{margin:0;font-size:12px;color:#555;}
+  #creativeExportPrintArea table{width:100%;border-collapse:collapse;}
+  #creativeExportPrintArea th,#creativeExportPrintArea td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:12px;}
+}
 </style>
 </head><body><div id="loginScreen">
   <div class="login-brand-float">
@@ -403,7 +432,12 @@ canvas{max-width:100%;}
       <button class="nav-btn" data-tab="goal" onclick="showTab('goal')"><span class="ic">&#9919;</span>Goal</button>
       <button class="nav-btn" data-tab="stores" onclick="showTab('stores')"><span class="ic">&#9733;</span>Store performance</button>
       <button class="nav-btn" data-tab="meta" onclick="showTab('meta')"><span class="ic">&#9636;</span>Meta performance</button>
-      <button class="nav-btn" data-tab="creatives" onclick="showTab('creatives')"><span class="ic">&#9635;</span>Creative performance</button>
+      <button class="nav-btn" data-tab="creatives" onclick="openCreativesSubtab('overview')"><span class="ic">&#9635;</span>Creative performance<span class="nav-chevron" id="creativesNavChevron">&#9662;</span></button>
+      <div class="nav-subgroup" id="creativesNavSubgroup">
+        <button class="nav-subbtn" data-subtab="overview" onclick="openCreativesSubtab('overview')">Overview</button>
+        <button class="nav-subbtn" data-subtab="trend" onclick="openCreativesSubtab('trend')">Trend</button>
+        <button class="nav-subbtn" data-subtab="export" onclick="openCreativesSubtab('export')">Export</button>
+      </div>
       <button class="nav-btn" data-tab="daily" onclick="showTab('daily')"><span class="ic">&#9782;</span>Daily numbers</button>
     </div>
     <div class="nav-group">
@@ -411,6 +445,10 @@ canvas{max-width:100%;}
       <button class="nav-btn" data-tab="forecast" onclick="showTab('forecast')"><span class="ic">&#8599;</span>Walk in forecast</button>
       <button class="nav-btn" data-tab="analysis" onclick="showTab('analysis')"><span class="ic">&#9783;</span>Last 7 vs prior 7</button>
       <button class="nav-btn" data-tab="actions" onclick="showTab('actions')"><span class="ic">&#9873;</span>Action items</button>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Finance</div>
+      <button class="nav-btn" data-tab="finance" onclick="showTab('finance')"><span class="ic">&#8377;</span>Finance</button>
     </div>
     <div class="nav-group nav-group-push">
       <div class="nav-label">System</div>
@@ -563,16 +601,39 @@ canvas{max-width:100%;}
         </div>
         <div class="creative-subtab-nav">
           <button type="button" class="creative-subtab-btn active" id="creativeSubtabBtn-overview" onclick="setCreativeSubtab('overview')">Overview</button>
-          <button type="button" class="creative-subtab-btn" id="creativeSubtabBtn-metric" onclick="setCreativeSubtab('metric')">By Metric</button>
+          <button type="button" class="creative-subtab-btn" id="creativeSubtabBtn-trend" onclick="setCreativeSubtab('trend')">Trend</button>
+          <button type="button" class="creative-subtab-btn" id="creativeSubtabBtn-export" onclick="setCreativeSubtab('export')">Export</button>
         </div>
         <div class="creative-subtab-pane active" id="creativeSubtab-overview">
+          <div class="creative-select-bar" id="creativeSelectBar" style="display:none;">
+            <span id="creativeSelectCount">0 selected</span>
+            <button type="button" class="chip good" onclick="markSelectedCreatives('Scale')">Mark as Scale</button>
+            <button type="button" class="chip warn" onclick="markSelectedCreatives('Kill')">Mark as Kill</button>
+            <button type="button" class="chip" onclick="clearCreativeSelection()">Clear selection</button>
+          </div>
           <div class="creative-grid" id="creativeGrid"></div>
         </div>
-        <div class="creative-subtab-pane" id="creativeSubtab-metric">
+        <div class="creative-subtab-pane" id="creativeSubtab-trend">
           <p class="impact-note" style="margin:0 0 10px;">Spend, CTR, Hook rate and Cost / Appointment are for the selected date range and filters above. The trend column always shows the last 7 days.</p>
           <div class="table-scroll"><table><thead><tr>
             <th>Content piece</th><th class="num">Spend</th><th class="num">CTR</th><th class="num">Hook rate</th><th class="num">Cost / Appointment</th><th>CTR trend (last 7 days)</th>
           </tr></thead><tbody id="creativeMetricBody"></tbody></table></div>
+        </div>
+        <div class="creative-subtab-pane" id="creativeSubtab-export">
+          <div class="panel-head" style="padding:0 0 14px;">
+            <div><h3 style="font-size:14px;">Marked for action</h3><p>Creatives you've marked as Scale or Kill from the Overview tab. Stays saved on this device.</p></div>
+            <div class="panel-controls">
+              <button type="button" class="chip active" onclick="downloadCreativeExportPdf()">Download PDF</button>
+              <button type="button" class="chip active" onclick="downloadCreativeExportExcel()">Download Excel</button>
+              <button type="button" class="chip" onclick="clearCreativeExportList()">Clear all</button>
+            </div>
+          </div>
+          <div id="creativeExportPrintArea">
+            <div class="export-print-head" id="exportPrintHead"></div>
+            <div class="table-scroll"><table><thead><tr>
+              <th>Ad name</th><th>Campaign name</th><th>Ad set name</th><th>Action</th><th class="no-print"></th>
+            </tr></thead><tbody id="creativeExportBody"></tbody></table></div>
+          </div>
         </div>
       </div>
     </div>
@@ -634,6 +695,25 @@ canvas{max-width:100%;}
         </div>
         <p class="impact-note" id="actionItemsCount" style="margin-bottom:12px;"></p>
         <div class="creative-grid" id="actionItemsGrid"></div>
+      </div>
+    </div>
+
+    <!-- FINANCE -->
+    <div class="tab-content" id="tab-finance">
+      <div class="panel">
+        <div class="panel-head">
+          <div><h3>Finance by region</h3><p>Meta spend (winning + testing, real cash outlay) and store-visit efficiency for the selected date range, all three regions shown regardless of the region filter above.</p></div>
+          <div class="panel-controls"><button type="button" class="chip active" onclick="downloadFinanceExcel()">Download Excel</button></div>
+        </div>
+        <div class="table-scroll"><table><thead><tr>
+          <th>Region</th><th class="num">Spend</th><th class="num">Cost / Visit</th><th class="num">Cost / Conversion</th><th class="num">Conversions</th>
+        </tr></thead><tbody id="financeRegionBody"></tbody></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h3>Finance by store</h3><p>Revenue and visit volume per physical location (Ops report), for the selected date range.</p></div></div>
+        <div class="table-scroll"><table><thead><tr>
+          <th>Store</th><th class="num">Total Revenue</th><th class="num">Total Visits</th><th class="num">Total First Visits</th><th class="num">AOV</th>
+        </tr></thead><tbody id="financeStoreBody"></tbody></table></div>
       </div>
     </div>
 
@@ -746,6 +826,28 @@ function fmtNum(n,d){ if(n===null||n===undefined||isNaN(n)) return '—'; d = d=
 function fmtPct(n,d){ if(n===null||n===undefined||isNaN(n)) return '—'; d=d===undefined?2:d; return n.toFixed(d) + '%'; }
 function fmtDelta(n,d){ d=d===undefined?2:d; if(n===null||n===undefined||isNaN(n)) return '—'; return (n>=0?'+':'') + n.toFixed(d) + '%'; }
 function fmtRatio(n){ if(n===null||n===undefined||isNaN(n)) return '—'; return n.toFixed(2) + 'x'; }
+/* ---------- CSV / Excel export (no bundled spreadsheet library, keeps the
+   dashboard a single self-contained HTML file) ---------- */
+function csvCell(v){
+  if(v===null||v===undefined) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? ('"' + s.replace(/"/g,'""') + '"') : s;
+}
+function toCsv(headers, rows){
+  const lines = [headers.map(csvCell).join(',')];
+  rows.forEach(r => lines.push(r.map(csvCell).join(',')));
+  return lines.join('\r\n');
+}
+function downloadCsv(filename, csvText){
+  const blob = new Blob(['﻿' + csvText], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 function deltaClass(pct, goodDir){ goodDir = goodDir||'up'; if(goodDir==='down') return pct<=0 ? 'up' : 'down'; return pct>=0 ? 'up' : 'down'; }
 function cssVar(name, fallback){ const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v || fallback; }
 function getAccent(){ return cssVar('--accent', '#4b3df6'); }
@@ -1270,6 +1372,73 @@ function renderStoreTable(){
   tbody.innerHTML = html;
 }
 
+/* ---------- Finance tab (region spend/efficiency + store revenue) ---------- */
+// Total Meta spend (winning + testing, real cash outlay) by region, against
+// store-visit efficiency rolled up from the Ops report. Always shows all
+// three regions/four stores regardless of the region filter above, same
+// convention as the region/store comparison tables on Store performance.
+function financeRegionRows(){
+  const prior = priorRangeFor(state.start, state.end);
+  return ['pune','mumbai','virtual'].map(region => {
+    const stores = storesForRegion(region);
+    const ops = sumOpsRange(stores, state.start, state.end);
+    const spend = sumSpendRange([region], state.start, state.end, 'all');
+    const opsPrior = sumOpsRange(stores, prior.start, prior.end);
+    const spendPrior = sumSpendRange([region], prior.start, prior.end, 'all');
+    const costPerVisit = ops.total_visits ? spend.spend/ops.total_visits : null;
+    const costPerVisitPrior = opsPrior.total_visits ? spendPrior.spend/opsPrior.total_visits : null;
+    const costPerConversion = ops.conversions ? spend.spend/ops.conversions : null;
+    const costPerConversionPrior = opsPrior.conversions ? spendPrior.spend/opsPrior.conversions : null;
+    return {region, spend: spend.spend, spendPrior: spendPrior.spend,
+      costPerVisit, costPerVisitPrior, costPerConversion, costPerConversionPrior,
+      conversions: ops.conversions, conversionsPrior: opsPrior.conversions};
+  });
+}
+function financeStoreRows(){
+  const prior = priorRangeFor(state.start, state.end);
+  return STORE_ORDER.map(store => {
+    const ops = sumOpsRange([store], state.start, state.end);
+    const opsPrior = sumOpsRange([store], prior.start, prior.end);
+    const aov = ops.conversions ? ops.revenue/ops.conversions : null;
+    const aovPrior = opsPrior.conversions ? opsPrior.revenue/opsPrior.conversions : null;
+    return {store, revenue: ops.revenue, revenuePrior: opsPrior.revenue,
+      total_visits: ops.total_visits, total_visits_prior: opsPrior.total_visits,
+      total_first_visits: ops.total_first_visits, total_first_visits_prior: opsPrior.total_first_visits,
+      aov, aovPrior};
+  });
+}
+function renderFinanceTab(){
+  const regionBody = document.getElementById('financeRegionBody');
+  regionBody.innerHTML = financeRegionRows().map(r => {
+    return '<tr><td><span class="region-tag '+r.region+'">'+REGION_LABEL[r.region]+'</span></td>'
+      + '<td class="num">'+fmtCurrency(r.spend)+deltaSub(r.spend,r.spendPrior)+'</td>'
+      + '<td class="num">'+fmtCurrency(r.costPerVisit)+deltaSub(r.costPerVisit,r.costPerVisitPrior,'down')+'</td>'
+      + '<td class="num">'+fmtCurrency(r.costPerConversion)+deltaSub(r.costPerConversion,r.costPerConversionPrior,'down')+'</td>'
+      + '<td class="num">'+fmtNum(r.conversions)+deltaSub(r.conversions,r.conversionsPrior)+'</td>'
+      + '</tr>';
+  }).join('');
+  const storeBody = document.getElementById('financeStoreBody');
+  storeBody.innerHTML = financeStoreRows().map(r => {
+    return '<tr><td><span class="dot region-'+DATA.stores[r.store].region+'"></span>'+DATA.stores[r.store].label+'</td>'
+      + '<td class="num">'+fmtCurrency(r.revenue)+deltaSub(r.revenue,r.revenuePrior)+'</td>'
+      + '<td class="num">'+fmtNum(r.total_visits)+deltaSub(r.total_visits,r.total_visits_prior)+'</td>'
+      + '<td class="num">'+fmtNum(r.total_first_visits)+deltaSub(r.total_first_visits,r.total_first_visits_prior)+'</td>'
+      + '<td class="num">'+fmtCurrency(r.aov)+deltaSub(r.aov,r.aovPrior)+'</td>'
+      + '</tr>';
+  }).join('');
+}
+function downloadFinanceExcel(){
+  const regionRows = financeRegionRows().map(r => [REGION_LABEL[r.region], r.spend.toFixed(2), r.costPerVisit===null?'':r.costPerVisit.toFixed(2), r.costPerConversion===null?'':r.costPerConversion.toFixed(2), r.conversions]);
+  const storeRows = financeStoreRows().map(r => [DATA.stores[r.store].label, r.revenue.toFixed(2), r.total_visits, r.total_first_visits, r.aov===null?'':r.aov.toFixed(2)]);
+  const lines = [];
+  lines.push('Finance by region ('+state.start+' to '+state.end+')');
+  lines.push(toCsv(['Region','Spend','Cost / Visit','Cost / Conversion','Conversions'], regionRows));
+  lines.push('');
+  lines.push('Finance by store ('+state.start+' to '+state.end+')');
+  lines.push(toCsv(['Store','Total Revenue','Total Visits','Total First Visits','AOV'], storeRows));
+  downloadCsv('rings-and-i-finance-'+state.start+'-to-'+state.end+'.csv', lines.join('\r\n'));
+}
+
 /* ---------- Meta performance tab (date range aware, region + compare) ---------- */
 let campaignWindows = null;
 function buildCampaignWindows(){
@@ -1487,7 +1656,9 @@ function getFilteredCreativeRows(){
 function setCreativeSubtab(name){
   document.querySelectorAll('.creative-subtab-btn').forEach(b => b.classList.toggle('active', b.id === 'creativeSubtabBtn-'+name));
   document.querySelectorAll('.creative-subtab-pane').forEach(p => p.classList.toggle('active', p.id === 'creativeSubtab-'+name));
-  if(name === 'metric') renderCreativeMetricTab();
+  document.querySelectorAll('.nav-subbtn').forEach(b => b.classList.toggle('active', b.dataset.subtab === name));
+  if(name === 'trend') renderCreativeMetricTab();
+  if(name === 'export') renderCreativeExportTab();
 }
 // Small inline SVG sparkline, no chart library instance per row (there can be
 // dozens of creatives in the table at once).
@@ -1555,6 +1726,7 @@ function renderCreativeTab(){
     const color = hashColor(r.campaign+'||'+r.ad_name);
     const liveLine = r.active ? ('Live since '+r.first_day) : ('Paused '+r.daysSincePaused+'d ago, ran '+r.first_day+' to '+(r.last_spend_day||r.last_day));
     return '<div class="creative-card">'
+      + '<label class="creative-select-wrap"><input type="checkbox" class="creative-select-box" '+(creativeSelection.has(r.id)?'checked':'')+' onchange="toggleCreativeSelect('+r.id+', this.checked)"></label>'
       + '<div class="creative-thumb" style="background:'+color+';">'+initials+'</div>'
       + '<div class="creative-name">'+esc(r.ad_name)+'</div>'
       + '<div class="creative-sub">'+esc(r.campaign)+' <span class="plat-tag" style="margin:0 4px;">'+REGION_LABEL[r.region]+'</span> <span class="badge '+(r.sub_type==='testing'?'amber':'good')+'" style="margin-left:2px;">'+(r.sub_type==='testing'?'Testing':'Winning')+'</span><br>Ad set: '+esc(r.adset)+'</div>'
@@ -1571,6 +1743,88 @@ function renderCreativeTab(){
   if(!rows.length) grid.innerHTML = '<p class="impact-note">No creatives match this range/filter combination.</p>';
   document.getElementById('creativeCountLabel').textContent = rows.length + ' creatives for '+state.start+' to '+state.end+', '+REGION_LABEL[state.region];
   renderCreativeMetricTab(rows);
+  updateCreativeSelectBar();
+}
+
+/* ---------- Creative selection + Export (Scale/Kill actions) ---------- */
+let creativeSelection = new Set();
+const CREATIVE_EXPORT_KEY = 'gos_creative_actions';
+function loadCreativeExportList(){
+  try{ return JSON.parse(localStorage.getItem(CREATIVE_EXPORT_KEY)) || []; }catch(e){ return []; }
+}
+function saveCreativeExportList(list){ localStorage.setItem(CREATIVE_EXPORT_KEY, JSON.stringify(list)); }
+function toggleCreativeSelect(id, checked){
+  if(checked) creativeSelection.add(id); else creativeSelection.delete(id);
+  updateCreativeSelectBar();
+}
+function clearCreativeSelection(){
+  creativeSelection.clear();
+  renderCreativeTab();
+}
+function updateCreativeSelectBar(){
+  const bar = document.getElementById('creativeSelectBar');
+  const count = creativeSelection.size;
+  document.getElementById('creativeSelectCount').textContent = count + ' selected';
+  bar.style.display = count ? 'flex' : 'none';
+}
+// Marks every currently-selected creative with the given action, upserting
+// into the saved export list (re-marking a creative just updates its action
+// rather than adding a duplicate row).
+function markSelectedCreatives(action){
+  if(!creativeSelection.size) return;
+  const list = loadCreativeExportList();
+  const byId = {};
+  list.forEach(e => { byId[e.id] = e; });
+  creativeSelection.forEach(id => {
+    const c = DATA.creative_meta.find(x => x.id === id);
+    if(!c) return;
+    byId[id] = {id: c.id, ad_name: c.ad_name, campaign: c.campaign, adset: c.adset, action: action, marked_at: new Date().toISOString()};
+  });
+  saveCreativeExportList(Object.keys(byId).map(k => byId[k]));
+  creativeSelection.clear();
+  renderCreativeTab();
+  renderCreativeExportTab();
+}
+function removeCreativeExportEntry(id){
+  saveCreativeExportList(loadCreativeExportList().filter(e => e.id !== id));
+  renderCreativeExportTab();
+}
+function clearCreativeExportList(){
+  saveCreativeExportList([]);
+  renderCreativeExportTab();
+}
+function renderCreativeExportTab(){
+  const list = loadCreativeExportList();
+  const body = document.getElementById('creativeExportBody');
+  const head = document.getElementById('exportPrintHead');
+  const genDate = new Date().toISOString().slice(0,10);
+  head.innerHTML = '<h2>Rings &amp; I &mdash; Creative Actions Export</h2><p>Generated '+genDate+' &middot; '+list.length+' creative'+(list.length===1?'':'s')+'</p>';
+  if(!list.length){
+    body.innerHTML = '<tr><td colspan="5"><p class="impact-note">No creatives marked yet. Select creatives in Overview and mark them as Scale or Kill.</p></td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(e => {
+    const badge = e.action === 'Scale' ? 'good' : 'warn';
+    return '<tr>'
+      + '<td>'+esc(e.ad_name)+'</td>'
+      + '<td>'+esc(e.campaign)+'</td>'
+      + '<td>'+esc(e.adset)+'</td>'
+      + '<td><span class="badge '+badge+'">'+esc(e.action)+'</span></td>'
+      + '<td class="no-print"><button type="button" class="chip" onclick="removeCreativeExportEntry('+e.id+')">Remove</button></td>'
+      + '</tr>';
+  }).join('');
+}
+// PDF export uses the browser's native print dialog ("Save as PDF") rather
+// than a bundled PDF library, so the dashboard stays a single self-contained
+// HTML file. Print CSS hides everything except #creativeExportPrintArea.
+function downloadCreativeExportPdf(){
+  window.print();
+}
+function downloadCreativeExportExcel(){
+  const list = loadCreativeExportList();
+  const rows = list.map(e => [e.ad_name, e.campaign, e.adset, e.action]);
+  const csv = toCsv(['Ad name','Campaign name','Ad set name','Action'], rows);
+  downloadCsv('rings-and-i-creative-actions.csv', csv);
 }
 
 /* ---------- Daily numbers tab (winning campaigns only) ---------- */
@@ -2925,14 +3179,25 @@ function showTab(name){
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  const titleMap = {overview:'Overview', goal:'Goal', stores:'Store performance', meta:'Meta performance', creatives:'Creative performance', daily:'Daily numbers', forecast:'Walk in forecast', analysis:'Last 7 vs prior 7', actions:'Action items', settings:'Settings'};
+  const titleMap = {overview:'Overview', goal:'Goal', stores:'Store performance', meta:'Meta performance', creatives:'Creative performance', daily:'Daily numbers', forecast:'Walk in forecast', analysis:'Last 7 vs prior 7', actions:'Action items', finance:'Finance', settings:'Settings'};
   document.getElementById('pageTitle').textContent = titleMap[name] || name;
   document.getElementById('mobileTopbarTitle').textContent = titleMap[name] || name;
+  const subgroup = document.getElementById('creativesNavSubgroup');
+  if(subgroup) subgroup.classList.toggle('open', name === 'creatives');
+  const chevron = document.getElementById('creativesNavChevron');
+  if(chevron) chevron.classList.toggle('rotated', name === 'creatives');
   closeMobileMenu();
   if(name === 'creatives') renderCreativeTab();
   if(name === 'forecast') renderForecastTab();
   if(name === 'goal') renderGoalTab();
   if(name === 'actions') renderActionItemsTab();
+  if(name === 'finance') renderFinanceTab();
+}
+// Sidebar "Creative performance" dropdown: navigates to the creatives tab (if
+// not already there) and switches straight to the requested subtab.
+function openCreativesSubtab(name){
+  showTab('creatives');
+  setCreativeSubtab(name);
 }
 function setTheme(mode){
   document.documentElement.setAttribute('data-theme', mode);
@@ -2962,6 +3227,7 @@ function rerender(){
   renderActionItemsTab();
   if(document.getElementById('tab-creatives').classList.contains('active')) renderCreativeTab();
   if(document.getElementById('tab-forecast').classList.contains('active')) renderForecastTab();
+  if(document.getElementById('tab-finance').classList.contains('active')) renderFinanceTab();
 }
 
 function init(){
