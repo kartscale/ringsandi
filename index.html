@@ -828,6 +828,7 @@ function tryLogin(){
     document.getElementById('app').style.display = 'block';
     sessionStorage.setItem('gos_auth','1');
     sessionStorage.setItem('gos_tabs', tabs === 'all' ? 'all' : JSON.stringify(tabs));
+    sessionStorage.setItem('gos_pin_key', val);
     init();
   } else {
     const err = document.getElementById('loginError');
@@ -848,6 +849,7 @@ function togglePinVisibility(){
 function logout(){
   sessionStorage.removeItem('gos_auth');
   sessionStorage.removeItem('gos_tabs');
+  sessionStorage.removeItem('gos_pin_key');
   document.getElementById('app').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('pwInput').value = '';
@@ -862,6 +864,35 @@ document.addEventListener('click', () => document.querySelectorAll('.info-icon.o
 
 /* ---------- Formatting ---------- */
 function fmtCurrency(n){ if(n===null||n===undefined||isNaN(n)) return '—'; return '₹' + Math.round(n).toLocaleString('en-IN'); }
+// Money figures are masked for the PIN 0301 login (Meta/Creative/Daily access), which is
+// allowed to see performance metrics but not raw spend or cost figures. Every other PIN sees
+// real numbers. The mask is a solid block of '#' the same length as the formatted number
+// (including its comma separators), e.g. 10,000 -> ######, so the redaction still hints at
+// scale without revealing the actual figure.
+const MASKED_METRIC_KEYS = ['spend','cost_per_walkin','cost_per_conversion','cost_per_appointment',
+  'conversions','total_visits','total_first_visits','first_visits','website_visitors',
+  'appointments_booked','appointments_scheduled','walkins','direct_walkins'];
+function moneyMaskStr(n){
+  if(n===null||n===undefined||isNaN(n)) return '—';
+  const digits = Math.round(n).toLocaleString('en-IN');
+  return '₹' + digits.replace(/./g, '#');
+}
+function numMaskStr(n){
+  if(n===null||n===undefined||isNaN(n)) return '—';
+  return fmtNum(n).replace(/./g, '#');
+}
+function fmtCount(n){ return sessionStorage.getItem('gos_pin_key') === '0301' ? numMaskStr(n) : fmtNum(n); }
+function fmtSpend(n){ return sessionStorage.getItem('gos_pin_key') === '0301' ? moneyMaskStr(n) : fmtCurrency(n); }
+// Key-aware currency formatter for the chat assistant, which formats many different metrics
+// (spend, CPM, cost per appointment, cost per conversion, revenue, ...) through the same
+// generic formatVal(val, format) call. Only the specific keys in MASKED_METRIC_KEYS get masked
+// for PIN 0301; everything else (CPM, cost per appointment, etc.) still renders normally.
+function fmtMoneyKey(val, key, format){
+  if(sessionStorage.getItem('gos_pin_key') === '0301' && MASKED_METRIC_KEYS.indexOf(key) !== -1){
+    return format === 'currency' ? moneyMaskStr(val) : numMaskStr(val);
+  }
+  return formatVal(val, format);
+}
 function fmtNum(n,d){ if(n===null||n===undefined||isNaN(n)) return '—'; d = d===undefined?0:d; return Number(n).toLocaleString('en-IN', {minimumFractionDigits:d, maximumFractionDigits:d}); }
 function fmtPct(n,d){ if(n===null||n===undefined||isNaN(n)) return '—'; d=d===undefined?2:d; return n.toFixed(d) + '%'; }
 function fmtDelta(n,d){ d=d===undefined?2:d; if(n===null||n===undefined||isNaN(n)) return '—'; return (n>=0?'+':'') + n.toFixed(d) + '%'; }
@@ -1538,13 +1569,13 @@ function renderCampaignTable(){
       + '<td>'+esc(c.campaign)+'</td>'
       + '<td><span class="region-tag '+c.region+'">'+REGION_LABEL[c.region]+'</span></td>'
       + '<td><span class="badge '+(c.sub_type==='testing'?'amber':'good')+'">'+(c.sub_type==='testing'?'Testing':'Winning')+'</span></td>'
-      + '<td class="num">'+fmtCurrency(spend)+'</td>'
+      + '<td class="num">'+fmtSpend(spend)+'</td>'
       + '<td class="num">'+spendDelta.replace('<br>','')+'</td>'
       + '<td class="num">'+fmtNum(impr)+'</td>'
       + '<td class="num">'+fmtPct(ctr,2)+'</td>'
       + '<td class="num">'+fmtCurrency(cpm)+'</td>'
-      + '<td class="num">'+fmtNum(appt)+'</td>'
-      + '<td class="num">'+fmtCurrency(cpa)+'</td>'
+      + '<td class="num">'+fmtCount(appt)+'</td>'
+      + '<td class="num">'+fmtSpend(cpa)+'</td>'
       + '<td>'+win.first+' → '+win.last+'</td>'
       + '</tr>';
     const adsets = aggregateAdsets(state.start, state.end, c.campaign).filter(a => a.sub_type === c.sub_type);
@@ -1554,14 +1585,14 @@ function renderCampaignTable(){
           const aCtr = a.impressions ? a.link_clicks/a.impressions*100 : 0;
           const aCpm = a.impressions ? a.spend/a.impressions*1000 : 0;
           const aCpa = a.meta_appointments ? a.spend/a.meta_appointments : null;
-          return '<tr><td>'+esc(a.adset)+'</td><td class="num">'+fmtCurrency(a.spend)+'</td><td class="num">'+fmtNum(a.impressions)+'</td><td class="num">'+fmtPct(aCtr,2)+'</td><td class="num">'+fmtCurrency(aCpm)+'</td><td class="num">'+fmtNum(a.meta_appointments)+'</td><td class="num">'+fmtCurrency(aCpa)+'</td></tr>';
+          return '<tr><td>'+esc(a.adset)+'</td><td class="num">'+fmtSpend(a.spend)+'</td><td class="num">'+fmtNum(a.impressions)+'</td><td class="num">'+fmtPct(aCtr,2)+'</td><td class="num">'+fmtCurrency(aCpm)+'</td><td class="num">'+fmtCount(a.meta_appointments)+'</td><td class="num">'+fmtSpend(aCpa)+'</td></tr>';
         }).join('')
       + '</tbody></table></div></td></tr>';
   });
   tbody.innerHTML = html;
   document.getElementById('metaCountLabel').textContent = rows.length + ' campaign/type rows for '+state.start+' to '+state.end+', '+REGION_LABEL[state.region];
   const ex = DATA.meta.excluded_campaigns;
-  document.getElementById('excludedNote').textContent = ex.length ? ('Excluded from all spend totals dashboard-wide ('+fmtCurrency(DATA.meta.excluded_spend)+'): campaigns that never produced a tracked appointment — '+ex.join(', ')+'.') : '';
+  document.getElementById('excludedNote').textContent = ex.length ? ('Excluded from all spend totals dashboard-wide ('+fmtSpend(DATA.meta.excluded_spend)+'): campaigns that never produced a tracked appointment — '+ex.join(', ')+'.') : '';
 }
 function toggleCampaign(key){ expandedCampaigns[key] = !expandedCampaigns[key]; renderCampaignTable(); }
 
@@ -1748,10 +1779,10 @@ function renderCreativeMetricTab(rows){
     const trend = creativeCtrLast7(r.id, refDate);
     return '<tr>'
       + '<td>'+esc(r.ad_name)+'<div class="creative-sub" style="margin-top:2px;">'+esc(r.campaign)+'</div></td>'
-      + '<td class="num">'+fmtCurrency(r.spend)+'</td>'
+      + '<td class="num">'+fmtSpend(r.spend)+'</td>'
       + '<td class="num">'+r.ctr.toFixed(2)+'%</td>'
       + '<td class="num">'+r.hook.toFixed(2)+'%</td>'
-      + '<td class="num">'+fmtCurrency(r.cpa)+'</td>'
+      + '<td class="num">'+fmtSpend(r.cpa)+'</td>'
       + '<td>'+sparklineSvg(trend)+'</td>'
       + '</tr>';
   }).join('');
@@ -1772,12 +1803,12 @@ function renderCreativeTab(){
       + '<div class="creative-sub">'+esc(r.campaign)+' <span class="plat-tag" style="margin:0 4px;">'+REGION_LABEL[r.region]+'</span> <span class="badge '+(r.sub_type==='testing'?'amber':'good')+'" style="margin-left:2px;">'+(r.sub_type==='testing'?'Testing':'Winning')+'</span><br>Ad set: '+esc(r.adset)+'</div>'
       + '<div class="creative-sub"><span class="dot '+(r.active?'live':'paused')+'"></span>'+liveLine+' &middot; '+r.daysLive+' days live &middot; <span class="badge '+badge+'">'+r.status+'</span></div>'
       + '<div class="creative-stats">'
-      + '<div>Cost / Appt<b>'+fmtCurrency(r.cpa)+'</b></div>'
+      + '<div>Cost / Appt<b>'+fmtSpend(r.cpa)+'</b></div>'
       + '<div>CTR<b>'+r.ctr.toFixed(2)+'%</b></div>'
       + '<div>Hook rate<b>'+r.hook.toFixed(2)+'%</b></div>'
       + '<div>Impressions<b>'+fmtNum(r.impressions)+'</b></div>'
-      + '<div>Spend<b>'+fmtCurrency(r.spend)+'</b></div>'
-      + '<div>Meta Appointments<b>'+fmtNum(r.meta_appointments)+'</b></div>'
+      + '<div>Spend<b>'+fmtSpend(r.spend)+'</b></div>'
+      + '<div>Meta Appointments<b>'+fmtCount(r.meta_appointments)+'</b></div>'
       + '</div></div>';
   }).join('');
   if(!rows.length) grid.innerHTML = '<p class="impact-note">No creatives match this range/filter combination.</p>';
@@ -1913,7 +1944,9 @@ function renderDailyTab(){
   DAILY_METRICS.forEach(m => {
     const val = cur[m.key], priorVal = pri[m.key];
     const change = (priorVal !== null && priorVal !== undefined && priorVal !== 0) ? (val-priorVal)/Math.abs(priorVal)*100 : null;
-    html += '<tr><td>'+m.label+'</td><td class="num">'+formatVal(val,m.format)+'</td><td class="num">'+formatVal(priorVal,m.format)+'</td><td class="num">'+(change===null?'—':fmtDelta(change))+'</td></tr>';
+    const fmtFn = (m.key === 'spend' || m.key === 'cost_per_walkin') ? fmtSpend
+      : (MASKED_METRIC_KEYS.indexOf(m.key) !== -1 ? fmtCount : v => formatVal(v, m.format));
+    html += '<tr><td>'+m.label+'</td><td class="num">'+fmtFn(val)+'</td><td class="num">'+fmtFn(priorVal)+'</td><td class="num">'+(change===null?'—':fmtDelta(change))+'</td></tr>';
   });
   document.getElementById('dailyTotalsBody').innerHTML = html;
 
@@ -1922,21 +1955,21 @@ function renderDailyTab(){
   dates.forEach(date => {
     const d = dailyRowMetrics(storeList, regionList, date, date);
     rowsHtml += '<tr><td>'+date+'</td>'
-      + '<td class="num">'+fmtCurrency(d.spend)+'</td>'
+      + '<td class="num">'+fmtSpend(d.spend)+'</td>'
       + '<td class="num">'+fmtNum(d.reach)+'</td>'
       + '<td class="num">'+fmtNum(d.impressions)+'</td>'
       + '<td class="num">'+fmtPct(d.ctr,2)+'</td>'
       + '<td class="num">'+fmtNum(d.link_clicks)+'</td>'
-      + '<td class="num">'+fmtNum(d.website_visitors)+'</td>'
+      + '<td class="num">'+fmtCount(d.website_visitors)+'</td>'
       + '<td class="num">'+fmtPct(d.web_to_appt)+'</td>'
-      + '<td class="num">'+fmtNum(d.appointments_booked)+'</td>'
-      + '<td class="num">'+fmtNum(d.appointments_scheduled)+'</td>'
+      + '<td class="num">'+fmtCount(d.appointments_booked)+'</td>'
+      + '<td class="num">'+fmtCount(d.appointments_scheduled)+'</td>'
       + '<td class="num">'+fmtPct(d.appt_to_visit)+'</td>'
-      + '<td class="num">'+fmtNum(d.walkins)+'</td>'
-      + '<td class="num">'+fmtNum(d.total_visits)+'</td>'
-      + '<td class="num">'+fmtNum(d.first_visits)+'</td>'
-      + '<td class="num">'+fmtNum(d.conversions)+'</td>'
-      + '<td class="num">'+fmtCurrency(d.cost_per_walkin)+'</td>'
+      + '<td class="num">'+fmtCount(d.walkins)+'</td>'
+      + '<td class="num">'+fmtCount(d.total_visits)+'</td>'
+      + '<td class="num">'+fmtCount(d.first_visits)+'</td>'
+      + '<td class="num">'+fmtCount(d.conversions)+'</td>'
+      + '<td class="num">'+fmtSpend(d.cost_per_walkin)+'</td>'
       + '</tr>';
   });
   document.getElementById('dailyNumbersBody').innerHTML = rowsHtml;
@@ -2370,7 +2403,7 @@ function opsRootCause(metric, scope, periodA, periodB){
     const totalDelta = rows.reduce((s,r)=>s+r.delta,0);
     const share = totalDelta !== 0 ? rows[0].delta/totalDelta*100 : null;
     if(rows.length && share !== null && Math.abs(totalDelta) >= 3 && Math.abs(share) >= 60){
-      const moveText = rows[0].label+' moved from '+formatVal(rows[0].valB,metric.format)+' to '+formatVal(rows[0].valA,metric.format);
+      const moveText = rows[0].label+' moved from '+fmtMoneyKey(rows[0].valB,metric.key,metric.format)+' to '+fmtMoneyKey(rows[0].valA,metric.key,metric.format);
       const shareText = Math.abs(share) > 100
         ? moveText+' on its own, more than the entire net change for the region, since other stores moved in the opposite direction and partly offset it.'
         : moveText+', accounting for '+Math.abs(share).toFixed(0)+'% of this change on its own.';
@@ -2904,8 +2937,8 @@ function rankDrivers(itemsA, itemsB, metricKey, overallChangeSign){
   }
   return rows.filter(r => r.spendA > 0 || r.impressionsA > 0);
 }
-function fmtDriverLine(row, format, label){
-  return '• '+(label||row.name)+': '+formatVal(row.valB,format)+' → '+formatVal(row.valA,format)+' ('+fmtDelta(row.pctChange)+')';
+function fmtDriverLine(row, format, label, key){
+  return '• '+(label||row.name)+': '+fmtMoneyKey(row.valB,key,format)+' → '+fmtMoneyKey(row.valA,key,format)+' ('+fmtDelta(row.pctChange)+')';
 }
 function driverBreakdownText(metric, scope, periodA, periodB, subTypeFilter, overallChange){
   if(CAMPAIGN_BREAKDOWN_KEYS.indexOf(metric.key) === -1) return '';
@@ -2915,13 +2948,13 @@ function driverBreakdownText(metric, scope, periodA, periodB, subTypeFilter, ove
   const rankedCamp = rankDrivers(campA, campB, metric.key, sign);
   if(!rankedCamp.length) return '';
   const topCamp = rankedCamp.slice(0,2);
-  let out = '\n\nCampaign breakdown:\n' + topCamp.map(r => fmtDriverLine(r, metric.format)).join('\n');
+  let out = '\n\nCampaign breakdown:\n' + topCamp.map(r => fmtDriverLine(r, metric.format, undefined, metric.key)).join('\n');
   const leadCampaign = topCamp[0].name;
   const adA = adsetAgg(scope.regionList, subTypeFilter, periodA.start, periodA.end, leadCampaign);
   const adB = adsetAgg(scope.regionList, subTypeFilter, periodB.start, periodB.end, leadCampaign);
   const rankedAd = rankDrivers(adA, adB, metric.key, sign);
   if(rankedAd.length){
-    out += '\nWithin "'+leadCampaign+'", ad set breakdown:\n' + rankedAd.slice(0,2).map(r => fmtDriverLine(r, metric.format)).join('\n');
+    out += '\nWithin "'+leadCampaign+'", ad set breakdown:\n' + rankedAd.slice(0,2).map(r => fmtDriverLine(r, metric.format, undefined, metric.key)).join('\n');
   }
   return out;
 }
@@ -2941,7 +2974,7 @@ function topContributorsSnapshot(metric, scope, start, end, subTypeFilter){
   const additive = ['spend','impressions','reach','link_clicks','meta_appointments'].indexOf(metric.key) !== -1;
   camps.sort((a,b) => additive ? (b.value - a.value) : (b.spend - a.spend));
   const top = camps.slice(0,3);
-  return '\n\nBy campaign:\n' + top.map(c => '• '+c.name+': '+formatVal(c.value,metric.format)).join('\n');
+  return '\n\nBy campaign:\n' + top.map(c => '• '+c.name+': '+fmtMoneyKey(c.value,metric.key,metric.format)).join('\n');
 }
 function diagnoseMetricChange(metric, scope, periodA, periodB, subTypeFilter){
   const valA = getMetricValue(metric.key, scope.storeList, scope.regionList, periodA.start, periodA.end, subTypeFilter);
@@ -2949,10 +2982,10 @@ function diagnoseMetricChange(metric, scope, periodA, periodB, subTypeFilter){
   const change = (valB !== null && valB !== undefined && valB !== 0) ? (valA-valB)/Math.abs(valB)*100 : null;
   let text = '';
   if(change === null){
-    text = metric.label+' for '+scope.label+' was '+formatVal(valA,metric.format)+' in '+periodA.label+' ('+formatVal(valB,metric.format)+' in '+periodB.label+'), too small a base to compute a meaningful % change. ';
+    text = metric.label+' for '+scope.label+' was '+fmtMoneyKey(valA,metric.key,metric.format)+' in '+periodA.label+' ('+fmtMoneyKey(valB,metric.key,metric.format)+' in '+periodB.label+'), too small a base to compute a meaningful % change. ';
   } else {
     const dir = change >= 0 ? 'risen' : 'fallen';
-    text = metric.label+' for '+scope.label+' has '+dir+' '+Math.abs(change).toFixed(2)+'% ('+formatVal(valB,metric.format)+' → '+formatVal(valA,metric.format)+'), comparing '+periodA.label+' to '+periodB.label+'. ';
+    text = metric.label+' for '+scope.label+' has '+dir+' '+Math.abs(change).toFixed(2)+'% ('+fmtMoneyKey(valB,metric.key,metric.format)+' → '+fmtMoneyKey(valA,metric.key,metric.format)+'), comparing '+periodA.label+' to '+periodB.label+'. ';
   }
   const spendA = getMetricValue('spend', scope.storeList, scope.regionList, periodA.start, periodA.end, subTypeFilter);
   const spendB = getMetricValue('spend', scope.storeList, scope.regionList, periodB.start, periodB.end, subTypeFilter);
@@ -3110,13 +3143,13 @@ function answerQuestion(raw){
     const valB = getMetricValue(metric.key, scope.storeList, scope.regionList, comparison.b.start, comparison.b.end, subTypeFilter);
     const change = (valB !== null && valB !== undefined && valB !== 0) ? (valA-valB)/Math.abs(valB)*100 : null;
     const breakdown = driverBreakdownText(metric, scope, comparison.a, comparison.b, subTypeFilter, change === null ? 1 : change);
-    return metric.label+' for '+scope.label+': '+formatVal(valA,metric.format)+' ('+comparison.labelA+') vs '+formatVal(valB,metric.format)+' ('+comparison.labelB+')'+(change!==null?', a change of '+fmtDelta(change):'')+'.'+caveat+breakdown;
+    return metric.label+' for '+scope.label+': '+fmtMoneyKey(valA,metric.key,metric.format)+' ('+comparison.labelA+') vs '+fmtMoneyKey(valB,metric.key,metric.format)+' ('+comparison.labelB+')'+(change!==null?', a change of '+fmtDelta(change):'')+'.'+caveat+breakdown;
   }
   const timeParsed = parseTimeRange(q);
   const range = timeParsed || {start: state.start, end: state.end, label: 'the currently selected range ('+state.start+' to '+state.end+')'};
   const val = getMetricValue(metric.key, scope.storeList, scope.regionList, range.start, range.end, subTypeFilter);
   const snapshot = topContributorsSnapshot(metric, scope, range.start, range.end, subTypeFilter);
-  return metric.label+' for '+scope.label+', '+range.label+': '+formatVal(val, metric.format)+'.'+caveat+snapshot;
+  return metric.label+' for '+scope.label+', '+range.label+': '+fmtMoneyKey(val, metric.key, metric.format)+'.'+caveat+snapshot;
 }
 
 /* ---------- Chat UI ---------- */
@@ -3209,7 +3242,7 @@ function renderDataNotes(){
   const html = '<p style="margin:0 0 10px;">Date range covers '+DATA.meta.date_min+' to '+DATA.meta.date_max+', matching the Ops report window.</p>'
     + '<p style="margin:0 0 10px;">Meta spend is allocated by campaign / ad set naming: ad sets containing "Virtual" → Virtual, campaigns or ad sets containing "Mumbai" or "testing" → Mumbai, everything else → Pune. Within Mumbai, campaigns/ad sets containing "testing" are tagged Testing; everything else Mumbai is tagged Winning.</p>'
     + '<p style="margin:0 0 10px;">"Winning-only" Mumbai spend is used in the Overview Region snapshot, the Store performance tab, and the whole Daily Numbers tab. The top KPI cards, Meta Performance and Analysis tabs use full Mumbai spend (winning + testing) — these will not reconcile with the Region snapshot/Store performance/Daily Numbers by design.</p>'
-    + '<p style="margin:0 0 10px;">Excluded from spend totals everywhere ('+fmtCurrency(DATA.meta.excluded_spend)+' total): campaigns that never produced a single tracked appointment — '+ex.join(', ')+'.</p>'
+    + '<p style="margin:0 0 10px;">Excluded from spend totals everywhere ('+fmtSpend(DATA.meta.excluded_spend)+' total): campaigns that never produced a single tracked appointment — '+ex.join(', ')+'.</p>'
     + '<p style="margin:0;">Daily Reach in the Daily Numbers tab is a raw daily sum across ad sets, not deduplicated the way Meta&rsquo;s monthly blended reach export is — treat day-level Reach as approximate.</p>';
   document.getElementById('dataNotesArea').innerHTML = html;
 }
