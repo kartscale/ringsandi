@@ -21,6 +21,8 @@
   --warn-bg:#fdeee9;
   --amber:#a5670a;
   --amber-bg:#fdf2df;
+  --learning:#c2570a;
+  --learning-bg:#ffe9d6;
   --radius:14px;
   --shadow:0 1px 2px rgba(23,26,43,0.04), 0 8px 24px rgba(23,26,43,0.05);
 }
@@ -37,6 +39,8 @@ html[data-theme="dark"]{
   --warn-bg:rgba(255,107,82,0.14);
   --amber:#eab35a;
   --amber-bg:rgba(234,179,90,0.14);
+  --learning:#ff9a52;
+  --learning-bg:rgba(255,154,82,0.16);
   --shadow:0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.4);
 }
 *{box-sizing:border-box;}
@@ -141,14 +145,15 @@ body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 .badge.good{background:var(--good-bg);color:var(--good);}
 .badge.warn{background:var(--warn-bg);color:var(--warn);}
 .badge.amber{background:var(--amber-bg);color:var(--amber);}
-.badge.neutral{background:var(--bg);color:var(--ink-soft);}
+.badge.neutral{background:var(--line);color:var(--ink-soft);}
+.badge.learning{background:var(--learning-bg);color:var(--learning);}
 
 table{width:100%;border-collapse:collapse;font-size:12.8px;}
 th{text-align:left;color:var(--ink-faint);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.03em;padding:8px 10px;border-bottom:1px solid var(--line);}
 td{padding:10px 10px;border-bottom:1px solid var(--line);color:var(--ink);}
 tr:last-child td{border-bottom:none;}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
-.plat-tag{font-size:10.5px;padding:2px 7px;border-radius:6px;background:var(--bg);color:var(--ink-soft);font-weight:600;}
+.plat-tag{font-size:10.5px;padding:2px 7px;border-radius:6px;background:var(--line);color:var(--ink-soft);font-weight:600;}
 .name-cell{display:flex;align-items:center;gap:9px;}
 .swatch{width:30px;height:30px;border-radius:8px;flex-shrink:0;}
 
@@ -166,11 +171,11 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
 .tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;margin-right:8px;text-transform:uppercase;vertical-align:1px;}
 .tag.watch{background:var(--warn-bg);color:var(--warn);}
 .tag.working{background:var(--good-bg);color:var(--good);}
-.tag.src{background:var(--bg);color:var(--ink-soft);font-weight:600;}
+.tag.src{background:var(--line);color:var(--ink-soft);font-weight:600;}
 .tag.src.meta{background:#eef1ff;color:#3b4fd6;}
 .tag.src.google{background:#fdeee9;color:#c2410c;}
 .tag.src.benchmark{background:var(--accent-soft);color:var(--accent);}
-.tag.src.own{background:var(--bg);color:var(--ink-soft);}
+.tag.src.own{background:var(--line);color:var(--ink-soft);}
 .impact-note{font-size:11.8px;color:var(--ink-faint);margin-top:2px;}
 
 .camp-row{cursor:pointer;}
@@ -869,7 +874,7 @@ function fmtCurrency(n){ if(n===null||n===undefined||isNaN(n)) return '—'; ret
 // real numbers. The mask is a solid block of '#' the same length as the formatted number
 // (including its comma separators), e.g. 10,000 -> ######, so the redaction still hints at
 // scale without revealing the actual figure.
-const MASKED_METRIC_KEYS = ['spend','cost_per_walkin','cost_per_conversion','cost_per_appointment',
+const MASKED_METRIC_KEYS = ['spend','cost_per_walkin','cost_per_conversion',
   'conversions','total_visits','total_first_visits','first_visits','website_visitors',
   'appointments_booked','appointments_scheduled','walkins','direct_walkins'];
 function moneyMaskStr(n){
@@ -1575,7 +1580,7 @@ function renderCampaignTable(){
       + '<td class="num">'+fmtPct(ctr,2)+'</td>'
       + '<td class="num">'+fmtCurrency(cpm)+'</td>'
       + '<td class="num">'+fmtCount(appt)+'</td>'
-      + '<td class="num">'+fmtSpend(cpa)+'</td>'
+      + '<td class="num">'+fmtCurrency(cpa)+'</td>'
       + '<td>'+win.first+' → '+win.last+'</td>'
       + '</tr>';
     const adsets = aggregateAdsets(state.start, state.end, c.campaign).filter(a => a.sub_type === c.sub_type);
@@ -1585,7 +1590,7 @@ function renderCampaignTable(){
           const aCtr = a.impressions ? a.link_clicks/a.impressions*100 : 0;
           const aCpm = a.impressions ? a.spend/a.impressions*1000 : 0;
           const aCpa = a.meta_appointments ? a.spend/a.meta_appointments : null;
-          return '<tr><td>'+esc(a.adset)+'</td><td class="num">'+fmtSpend(a.spend)+'</td><td class="num">'+fmtNum(a.impressions)+'</td><td class="num">'+fmtPct(aCtr,2)+'</td><td class="num">'+fmtCurrency(aCpm)+'</td><td class="num">'+fmtCount(a.meta_appointments)+'</td><td class="num">'+fmtSpend(aCpa)+'</td></tr>';
+          return '<tr><td>'+esc(a.adset)+'</td><td class="num">'+fmtSpend(a.spend)+'</td><td class="num">'+fmtNum(a.impressions)+'</td><td class="num">'+fmtPct(aCtr,2)+'</td><td class="num">'+fmtCurrency(aCpm)+'</td><td class="num">'+fmtCount(a.meta_appointments)+'</td><td class="num">'+fmtCurrency(aCpa)+'</td></tr>';
         }).join('')
       + '</tbody></table></div></td></tr>';
   });
@@ -1667,7 +1672,8 @@ function creativeTrendStatus(id, refDate){
     if(r.date >= last7start && r.date <= refDate){ lastImpr+=r.impressions; lastClicks+=r.link_clicks; lastViews+=r.video_views; lastSpend+=r.spend; }
     else if(r.date >= prior7start && r.date <= prior7end){ priorImpr+=r.impressions; priorClicks+=r.link_clicks; priorViews+=r.video_views; }
   });
-  if(lastSpend <= 2000 || !lastImpr) return 'Steady';
+  if(!lastImpr) return 'Steady';
+  if(lastSpend <= 2000) return 'Learning';
   const ctrLast = lastClicks/lastImpr*100;
   const hookLast = lastViews/lastImpr*100;
   const goalCtr = loadGoals().ctr;
@@ -1782,7 +1788,7 @@ function renderCreativeMetricTab(rows){
       + '<td class="num">'+fmtSpend(r.spend)+'</td>'
       + '<td class="num">'+r.ctr.toFixed(2)+'%</td>'
       + '<td class="num">'+r.hook.toFixed(2)+'%</td>'
-      + '<td class="num">'+fmtSpend(r.cpa)+'</td>'
+      + '<td class="num">'+fmtCurrency(r.cpa)+'</td>'
       + '<td>'+sparklineSvg(trend)+'</td>'
       + '</tr>';
   }).join('');
@@ -1792,7 +1798,7 @@ function renderCreativeTab(){
   const rows = getFilteredCreativeRows();
   const grid = document.getElementById('creativeGrid');
   grid.innerHTML = rows.map(r => {
-    const badge = r.status === 'Scale' ? 'good' : (r.status === 'Kill' ? 'warn' : (r.status === 'Fatigue' ? 'amber' : 'neutral'));
+    const badge = r.status === 'Scale' ? 'good' : (r.status === 'Kill' ? 'warn' : (r.status === 'Fatigue' ? 'amber' : (r.status === 'Learning' ? 'learning' : 'neutral')));
     const initials = initialsOf(r.ad_name);
     const color = hashColor(r.campaign+'||'+r.ad_name);
     const liveLine = r.active ? ('Live since '+r.first_day) : ('Paused '+r.daysSincePaused+'d ago, ran '+r.first_day+' to '+(r.last_spend_day||r.last_day));
@@ -1803,7 +1809,7 @@ function renderCreativeTab(){
       + '<div class="creative-sub">'+esc(r.campaign)+' <span class="plat-tag" style="margin:0 4px;">'+REGION_LABEL[r.region]+'</span> <span class="badge '+(r.sub_type==='testing'?'amber':'good')+'" style="margin-left:2px;">'+(r.sub_type==='testing'?'Testing':'Winning')+'</span><br>Ad set: '+esc(r.adset)+'</div>'
       + '<div class="creative-sub"><span class="dot '+(r.active?'live':'paused')+'"></span>'+liveLine+' &middot; '+r.daysLive+' days live &middot; <span class="badge '+badge+'">'+r.status+'</span></div>'
       + '<div class="creative-stats">'
-      + '<div>Cost / Appt<b>'+fmtSpend(r.cpa)+'</b></div>'
+      + '<div>Cost / Appt<b>'+fmtCurrency(r.cpa)+'</b></div>'
       + '<div>CTR<b>'+r.ctr.toFixed(2)+'%</b></div>'
       + '<div>Hook rate<b>'+r.hook.toFixed(2)+'%</b></div>'
       + '<div>Impressions<b>'+fmtNum(r.impressions)+'</b></div>'
