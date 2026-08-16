@@ -217,6 +217,19 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
 .action-card.action-good{border-left-color:var(--good);}
 .action-card.action-neutral{border-left-color:var(--ink-faint);}
 
+/* ---- Notifications tab ---- */
+.notif-list{display:flex;flex-direction:column;gap:12px;}
+.notif-card{background:var(--bg);border:1px solid var(--line);border-left-width:4px;border-radius:12px;padding:14px 16px;}
+.notif-card.notif-good{border-left-color:var(--good);}
+.notif-card.notif-warn{border-left-color:var(--warn);}
+.notif-card.notif-neutral{border-left-color:var(--ink-faint);}
+.notif-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+.notif-arrow{font-size:14px;font-weight:700;line-height:1;}
+.notif-arrow.notif-good{color:var(--good);}
+.notif-arrow.notif-warn{color:var(--warn);}
+.notif-metric{font-size:13.5px;font-weight:700;color:var(--ink);flex:1;}
+.notif-body{font-size:13px;line-height:1.55;color:var(--ink-soft);white-space:pre-line;}
+
 .note-box{background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 30%, var(--panel));border-radius:12px;padding:14px 16px;font-size:13px;color:var(--ink);line-height:1.55;}
 .foot-note{font-size:11.5px;color:var(--ink-faint);margin-top:22px;text-align:center;}
 .foot-note.kartscale-footer{margin-top:4px;letter-spacing:.03em;}
@@ -387,17 +400,24 @@ canvas{max-width:100%;}
 .chat-input-row input{flex:1;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12.8px;font-family:inherit;}
 @media(max-width:520px){.chat-panel{right:10px;left:10px;width:auto;bottom:78px;}.chat-fab{right:14px;bottom:14px;}}
 
-/* ---- Creative export -> PDF (browser print/Save as PDF) ---- */
+/* ---- Export dropdown (Creative export + Finance) ---- */
+.export-menu-wrap{position:relative;display:inline-block;}
+.export-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:30;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px;min-width:160px;flex-direction:column;gap:2px;}
+.export-menu.show{display:flex;}
+.export-menu button{width:100%;text-align:left;border:none;background:none;padding:8px 10px;border-radius:7px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
+.export-menu button:hover{background:var(--bg);color:var(--ink);}
+
+/* ---- Export -> PDF (browser print/Save as PDF) ---- */
 @media print{
   body *{visibility:hidden;}
-  #creativeExportPrintArea, #creativeExportPrintArea *{visibility:visible;}
-  #creativeExportPrintArea{position:absolute;left:0;top:0;width:100%;padding:20px;}
-  #creativeExportPrintArea .no-print{display:none;}
-  #creativeExportPrintArea .export-print-head{display:block;margin-bottom:16px;}
-  #creativeExportPrintArea .export-print-head h2{margin:0 0 4px;font-size:18px;}
-  #creativeExportPrintArea .export-print-head p{margin:0;font-size:12px;color:#555;}
-  #creativeExportPrintArea table{width:100%;border-collapse:collapse;}
-  #creativeExportPrintArea th,#creativeExportPrintArea td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:12px;}
+  #creativeExportPrintArea, #creativeExportPrintArea *, #financePrintArea, #financePrintArea *{visibility:visible;}
+  #creativeExportPrintArea, #financePrintArea{position:absolute;left:0;top:0;width:100%;padding:20px;}
+  #creativeExportPrintArea .no-print, #financePrintArea .no-print{display:none;}
+  #creativeExportPrintArea .export-print-head, #financePrintArea .export-print-head{display:block;margin-bottom:16px;}
+  #creativeExportPrintArea .export-print-head h2, #financePrintArea .export-print-head h2{margin:0 0 4px;font-size:18px;}
+  #creativeExportPrintArea .export-print-head p, #financePrintArea .export-print-head p{margin:0;font-size:12px;color:#555;}
+  #creativeExportPrintArea table, #financePrintArea table{width:100%;border-collapse:collapse;margin-bottom:14px;}
+  #creativeExportPrintArea th, #creativeExportPrintArea td, #financePrintArea th, #financePrintArea td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:12px;}
 }
 </style>
 </head><body><div id="loginScreen">
@@ -450,14 +470,11 @@ canvas{max-width:100%;}
       <button class="nav-btn" data-tab="forecast" onclick="showTab('forecast')"><span class="ic">&#8599;</span>Walk in forecast</button>
       <button class="nav-btn" data-tab="analysis" onclick="showTab('analysis')"><span class="ic">&#9783;</span>Last 7 vs prior 7</button>
       <button class="nav-btn" data-tab="actions" onclick="showTab('actions')"><span class="ic">&#9873;</span>Action items</button>
+      <button class="nav-btn" data-tab="notifications" onclick="showTab('notifications')"><span class="ic">&#9679;</span>Notifications</button>
     </div>
     <div class="nav-group">
       <div class="nav-label">Finance</div>
       <button class="nav-btn" data-tab="finance" onclick="showTab('finance')"><span class="ic">&#8377;</span>Finance</button>
-    </div>
-    <div class="nav-group nav-group-push">
-      <div class="nav-label">System</div>
-      <button class="nav-btn" data-tab="settings" onclick="showTab('settings')"><span class="ic">&#9881;</span>Settings</button>
     </div>
     <div class="sidebar-foot">
       <span class="sidebar-foot-label">Logged in as Rings &amp; I</span><br>
@@ -628,8 +645,13 @@ canvas{max-width:100%;}
           <div class="panel-head" style="padding:0 0 14px;">
             <div><h3 style="font-size:14px;">Marked for action</h3><p>Creatives you've marked as Scale or Kill from the Overview tab. Stays saved on this device.</p></div>
             <div class="panel-controls">
-              <button type="button" class="chip active" onclick="downloadCreativeExportPdf()">Download PDF</button>
-              <button type="button" class="chip active" onclick="downloadCreativeExportExcel()">Download Excel</button>
+              <div class="export-menu-wrap">
+                <button type="button" class="chip active" onclick="toggleExportMenu('creativeExportMenu')">Export &#9662;</button>
+                <div class="export-menu" id="creativeExportMenu">
+                  <button type="button" onclick="downloadCreativeExportPdf();closeExportMenus();">Export as PDF</button>
+                  <button type="button" onclick="downloadCreativeExportExcel();closeExportMenus();">Export as CSV</button>
+                </div>
+              </div>
               <button type="button" class="chip" onclick="clearCreativeExportList()">Clear all</button>
             </div>
           </div>
@@ -705,41 +727,39 @@ canvas{max-width:100%;}
 
     <!-- FINANCE -->
     <div class="tab-content" id="tab-finance">
-      <div class="panel">
-        <div class="panel-head">
-          <div><h3>Finance by region</h3><p>Meta spend (winning + testing, real cash outlay) and store-visit efficiency for the selected date range, all three regions shown regardless of the region filter above.</p></div>
-          <div class="panel-controls"><button type="button" class="chip active" onclick="downloadFinanceExcel()">Download Excel</button></div>
+      <div id="financePrintArea">
+        <div class="export-print-head" id="financePrintHead"></div>
+        <div class="panel">
+          <div class="panel-head">
+            <div><h3>Finance by region</h3><p>Meta spend (winning + testing, real cash outlay) and store-visit efficiency for the selected date range, all three regions shown regardless of the region filter above.</p></div>
+            <div class="panel-controls no-print">
+              <div class="export-menu-wrap">
+                <button type="button" class="chip active" onclick="toggleExportMenu('financeExportMenu')">Export &#9662;</button>
+                <div class="export-menu" id="financeExportMenu">
+                  <button type="button" onclick="downloadFinancePdf();closeExportMenus();">Export as PDF</button>
+                  <button type="button" onclick="downloadFinanceExcel();closeExportMenus();">Export as CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="table-scroll"><table><thead><tr>
+            <th>Region</th><th class="num">Spend</th><th class="num">Cost / Visit</th><th class="num">Cost / Conversion</th><th class="num">Conversions</th>
+          </tr></thead><tbody id="financeRegionBody"></tbody></table></div>
         </div>
-        <div class="table-scroll"><table><thead><tr>
-          <th>Region</th><th class="num">Spend</th><th class="num">Cost / Visit</th><th class="num">Cost / Conversion</th><th class="num">Conversions</th>
-        </tr></thead><tbody id="financeRegionBody"></tbody></table></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><div><h3>Finance by store</h3><p>Revenue and visit volume per physical location (Ops report), for the selected date range.</p></div></div>
-        <div class="table-scroll"><table><thead><tr>
-          <th>Store</th><th class="num">Total Revenue</th><th class="num">Total Visits</th><th class="num">Total First Visits</th><th class="num">AOV</th>
-        </tr></thead><tbody id="financeStoreBody"></tbody></table></div>
+        <div class="panel">
+          <div class="panel-head"><div><h3>Finance by store</h3><p>Revenue and visit volume per physical location (Ops report), for the selected date range.</p></div></div>
+          <div class="table-scroll"><table><thead><tr>
+            <th>Store</th><th class="num">Total Revenue</th><th class="num">Total Visits</th><th class="num">Total First Visits</th><th class="num">AOV</th>
+          </tr></thead><tbody id="financeStoreBody"></tbody></table></div>
+        </div>
       </div>
     </div>
 
-    <!-- SETTINGS -->
-    <div class="tab-content" id="tab-settings">
-      <div class="panel" style="max-width:520px;">
-        <div class="panel-head"><div><h3>Display settings</h3><p>Saved for this session only, on this device</p></div></div>
-        <div class="settings-row">
-          <div>
-            <div class="settings-row-label">Theme</div>
-            <div class="settings-row-desc">Switch between a light and dark interface</div>
-          </div>
-          <div class="theme-toggle">
-            <button class="theme-btn" id="theme-btn-light" onclick="setTheme('light')">Light</button>
-            <button class="theme-btn" id="theme-btn-dark" onclick="setTheme('dark')">Dark</button>
-          </div>
-        </div>
-      </div>
-      <div class="panel" style="max-width:560px;">
-        <div class="panel-head"><div><h3>Data notes</h3></div></div>
-        <div class="data-note" id="dataNotesArea"></div>
+    <!-- NOTIFICATIONS -->
+    <div class="tab-content" id="tab-notifications">
+      <div class="panel">
+        <div class="panel-head"><div><h3 id="notificationsRangeTitle">Last 3 days vs prior 3 days</h3><p>Meaningful metric movements only &mdash; small day to day noise is filtered out. Follows the region filter above, always compares the most recent 3 days of data to the 3 days before that, independent of the toolbar's date range.</p></div></div>
+        <div id="notificationsList"></div>
       </div>
     </div>
 
@@ -787,9 +807,10 @@ canvas{max-width:100%;}
 //# sourceMappingURL=chart.umd.js.map
 </script><script>
 /* ---------- Login ---------- */
-const TAB_ORDER = ['overview','goal','stores','meta','creatives','daily','forecast','analysis','actions','finance','settings'];
+const TAB_ORDER = ['overview','goal','stores','meta','creatives','daily','forecast','analysis','actions','notifications','finance'];
 const ACCESS_PINS = {
   "9261": "all",
+  "8352": "all",
   "0301": ["meta","creatives","daily"],
   "3614": ["finance"]
 };
@@ -876,7 +897,8 @@ function fmtCurrency(n){ if(n===null||n===undefined||isNaN(n)) return '—'; ret
 // scale without revealing the actual figure.
 const MASKED_METRIC_KEYS = ['spend','cost_per_walkin','cost_per_conversion',
   'conversions','total_visits','total_first_visits','first_visits','website_visitors',
-  'appointments_booked','appointments_scheduled','walkins','direct_walkins'];
+  'appointments_booked','appointments_scheduled','walkins','direct_walkins','meta_appointments',
+  'revenue'];
 function moneyMaskStr(n){
   if(n===null||n===undefined||isNaN(n)) return '—';
   const digits = Math.round(n).toLocaleString('en-IN');
@@ -1123,7 +1145,7 @@ const KPI_FUNNEL = [
   {key:'repeat_visits', label:'Repeat Visits', format:'num', breakdown:'stores', tip:'Total Visits minus Total First Visits.'},
 ];
 const KPI_MARKETING = [
-  {key:'spend', label:'Meta Spend', format:'currency', breakdown:'regions', tip:'Includes winning and testing campaigns. Excludes campaigns that never produced a tracked appointment (see Settings > Data notes).'},
+  {key:'spend', label:'Meta Spend', format:'currency', breakdown:'regions', tip:'Includes winning and testing campaigns. Excludes campaigns that never produced a tracked appointment.'},
   {key:'website_visitors', label:'Website Visitors', format:'num', breakdown:'none', tip:'Online store sessions site wide (Shopify analytics), not split by store since discovery happens on one website.'},
   {key:'conversions', label:'Conversions', format:'num', breakdown:'stores'},
   {key:'revenue', label:'Revenue (Est.)', format:'currency', breakdown:'stores', tip:'Estimated order value from the Ops report, a real store reported figure, not a Meta based estimate.'},
@@ -1484,6 +1506,8 @@ function financeStoreRows(){
   });
 }
 function renderFinanceTab(){
+  const printHead = document.getElementById('financePrintHead');
+  if(printHead) printHead.innerHTML = '<h2>Rings &amp; I &mdash; Finance Report</h2><p>'+state.start+' to '+state.end+' &middot; '+REGION_LABEL[state.region]+'</p>';
   const regionBody = document.getElementById('financeRegionBody');
   regionBody.innerHTML = financeRegionRows().map(r => {
     return '<tr><td><span class="region-tag '+r.region+'">'+REGION_LABEL[r.region]+'</span></td>'
@@ -1514,6 +1538,25 @@ function downloadFinanceExcel(){
   lines.push(toCsv(['Store','Total Revenue','Total Visits','Total First Visits','AOV'], storeRows));
   downloadCsv('rings-and-i-finance-'+state.start+'-to-'+state.end+'.csv', lines.join('\r\n'));
 }
+function downloadFinancePdf(){
+  window.print();
+}
+// Shared "Export" dropdown used by Creative Export and Finance: opens the
+// requested menu (closing any other open one first) and closes on an
+// outside click.
+function toggleExportMenu(id){
+  const menu = document.getElementById(id);
+  if(!menu) return;
+  const wasOpen = menu.classList.contains('show');
+  closeExportMenus();
+  if(!wasOpen) menu.classList.add('show');
+}
+function closeExportMenus(){
+  document.querySelectorAll('.export-menu').forEach(m => m.classList.remove('show'));
+}
+document.addEventListener('click', function(e){
+  if(!e.target.closest || !e.target.closest('.export-menu-wrap')) closeExportMenus();
+});
 
 /* ---------- Meta performance tab (date range aware, region + compare) ---------- */
 let campaignWindows = null;
@@ -2567,6 +2610,81 @@ function buildActionItems(region){
   items.sort((a,b) => (order[a.severity]-order[b.severity]) || (b.confidence==='High') - (a.confidence==='High'));
   return items;
 }
+
+/* ---------- Notifications (last 3 days vs prior 3 days, region filtered) ---------- */
+// Curated set of "important" metrics to scan for meaningful movement. goodDir
+// says which direction is favorable so the card can be colored correctly
+// (e.g. CPM rising is bad even though the number itself went up).
+const NOTIFICATION_METRICS = [
+  {key:'spend', goodDir:'neutral'},
+  {key:'cpm', goodDir:'down'},
+  {key:'ctr', goodDir:'up'},
+  {key:'cost_per_walkin', goodDir:'down'},
+  {key:'cost_per_conversion', goodDir:'down'},
+  {key:'cost_per_first_visit', goodDir:'down'},
+  {key:'appointments_booked', goodDir:'up'},
+  {key:'direct_walkins', goodDir:'up'},
+  {key:'total_visits', goodDir:'up'},
+  {key:'conversions', goodDir:'up'},
+  {key:'revenue', goodDir:'up'},
+  {key:'roas', goodDir:'up'},
+  {key:'win_rate', goodDir:'up'},
+];
+// A metric only surfaces as a notification if the move clears both gates:
+// a real percentage swing (not day to day noise) AND a large enough base
+// that the percentage itself is meaningful (a 2->4 jump reads as "+100%"
+// but is not a real signal).
+const NOTIFICATION_MIN_CHANGE_PCT = 10;
+const NOTIFICATION_MIN_BASE = {
+  spend:500, cpm:0, ctr:0, cost_per_walkin:0, cost_per_conversion:0, cost_per_first_visit:0,
+  appointments_booked:5, direct_walkins:5, total_visits:10, conversions:3, revenue:5000, roas:0, win_rate:0
+};
+function buildNotifications(storeList, regionList, periodA, periodB, scopeLabel){
+  const scope = {storeList, regionList, label:scopeLabel};
+  const items = [];
+  NOTIFICATION_METRICS.forEach(nm => {
+    const metric = METRIC_DICT.find(d => d.key === nm.key);
+    if(!metric) return;
+    const valA = getMetricValue(metric.key, storeList, regionList, periodA.start, periodA.end, 'all');
+    const valB = getMetricValue(metric.key, storeList, regionList, periodB.start, periodB.end, 'all');
+    if(valA===null||valA===undefined||valB===null||valB===undefined) return;
+    if(Math.abs(valB) < (NOTIFICATION_MIN_BASE[nm.key]||0)) return;
+    if(valB === 0) return;
+    const change = (valA-valB)/Math.abs(valB)*100;
+    if(!isFinite(change) || Math.abs(change) < NOTIFICATION_MIN_CHANGE_PCT) return;
+    const up = change >= 0;
+    let tone = 'neutral';
+    if(nm.goodDir === 'up') tone = up ? 'good' : 'warn';
+    else if(nm.goodDir === 'down') tone = up ? 'warn' : 'good';
+    const narrative = diagnoseMetricChange(metric, scope, periodA, periodB, 'all');
+    items.push({key:nm.key, label:metric.label, change, up, tone, narrative});
+  });
+  items.sort((a,b) => Math.abs(b.change) - Math.abs(a.change));
+  return items;
+}
+function renderNotificationsTab(){
+  const storeList = storesForRegion(state.region);
+  const regionList = regionsForFilter(state.region);
+  const max = dataMax();
+  const periodA = {start: addDaysStr(max,-2), end: max, label:'the last 3 days'};
+  const periodB = {start: addDaysStr(max,-5), end: addDaysStr(max,-3), label:'the prior 3 days'};
+  document.getElementById('notificationsRangeTitle').textContent =
+    'Last 3 days ('+periodA.start+' to '+periodA.end+') vs prior 3 days ('+periodB.start+' to '+periodB.end+'), '+REGION_LABEL[state.region];
+  const items = buildNotifications(storeList, regionList, periodA, periodB, REGION_LABEL[state.region]);
+  const listEl = document.getElementById('notificationsList');
+  if(!items.length){
+    listEl.innerHTML = '<p class="impact-note">No meaningful movements in the last 3 days vs the prior 3 days for '+REGION_LABEL[state.region]+'.</p>';
+    return;
+  }
+  listEl.innerHTML = '<div class="notif-list">' + items.map(it => {
+    const arrow = it.up ? '&#8593;' : '&#8595;';
+    return '<div class="notif-card notif-'+it.tone+'">'
+      + '<div class="notif-head"><span class="notif-arrow notif-'+it.tone+'">'+arrow+'</span><span class="notif-metric">'+esc(it.label)+'</span><span class="badge '+it.tone+'">'+(it.up?'+':'')+it.change.toFixed(2)+'%</span></div>'
+      + '<div class="notif-body">'+it.narrative+'</div>'
+      + '</div>';
+  }).join('') + '</div>';
+}
+
 function renderActionItemsTab(){
   const items = buildActionItems(state.region);
   const grid = document.getElementById('actionItemsGrid');
@@ -3242,24 +3360,13 @@ function sendChatMessage(){
   }, delay);
 }
 
-/* ---------- Settings / data notes ---------- */
-function renderDataNotes(){
-  const ex = DATA.meta.excluded_campaigns;
-  const html = '<p style="margin:0 0 10px;">Date range covers '+DATA.meta.date_min+' to '+DATA.meta.date_max+', matching the Ops report window.</p>'
-    + '<p style="margin:0 0 10px;">Meta spend is allocated by campaign / ad set naming: ad sets containing "Virtual" → Virtual, campaigns or ad sets containing "Mumbai" or "testing" → Mumbai, everything else → Pune. Within Mumbai, campaigns/ad sets containing "testing" are tagged Testing; everything else Mumbai is tagged Winning.</p>'
-    + '<p style="margin:0 0 10px;">"Winning-only" Mumbai spend is used in the Overview Region snapshot, the Store performance tab, and the whole Daily Numbers tab. The top KPI cards, Meta Performance and Analysis tabs use full Mumbai spend (winning + testing) — these will not reconcile with the Region snapshot/Store performance/Daily Numbers by design.</p>'
-    + '<p style="margin:0 0 10px;">Excluded from spend totals everywhere ('+fmtSpend(DATA.meta.excluded_spend)+' total): campaigns that never produced a single tracked appointment — '+ex.join(', ')+'.</p>'
-    + '<p style="margin:0;">Daily Reach in the Daily Numbers tab is a raw daily sum across ad sets, not deduplicated the way Meta&rsquo;s monthly blended reach export is — treat day-level Reach as approximate.</p>';
-  document.getElementById('dataNotesArea').innerHTML = html;
-}
-
 /* ---------- Tabs, theme, mobile ---------- */
 function showTab(name){
   if(!tabAllowed(name)) name = firstAllowedTab();
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  const titleMap = {overview:'Overview', goal:'Goal', stores:'Store performance', meta:'Meta performance', creatives:'Creative performance', daily:'Daily numbers', forecast:'Walk in forecast', analysis:'Last 7 vs prior 7', actions:'Action items', finance:'Finance', settings:'Settings'};
+  const titleMap = {overview:'Overview', goal:'Goal', stores:'Store performance', meta:'Meta performance', creatives:'Creative performance', daily:'Daily numbers', forecast:'Walk in forecast', analysis:'Last 7 vs prior 7', actions:'Action items', finance:'Finance', notifications:'Notifications'};
   document.getElementById('pageTitle').textContent = titleMap[name] || name;
   document.getElementById('mobileTopbarTitle').textContent = titleMap[name] || name;
   const subgroup = document.getElementById('creativesNavSubgroup');
@@ -3272,6 +3379,7 @@ function showTab(name){
   if(name === 'goal') renderGoalTab();
   if(name === 'actions') renderActionItemsTab();
   if(name === 'finance') renderFinanceTab();
+  if(name === 'notifications') renderNotificationsTab();
 }
 // Sidebar "Creative performance" dropdown: navigates to the creatives tab (if
 // not already there) and switches straight to the requested subtab.
@@ -3279,14 +3387,7 @@ function openCreativesSubtab(name){
   showTab('creatives');
   setCreativeSubtab(name);
 }
-function setTheme(mode){
-  document.documentElement.setAttribute('data-theme', mode);
-  document.getElementById('theme-btn-light').classList.toggle('active', mode==='light');
-  document.getElementById('theme-btn-dark').classList.toggle('active', mode==='dark');
-  localStorage.setItem('gos_theme', mode);
-  applyChartTheming();
-  rerender();
-}
+
 function toggleMobileMenu(){ document.querySelector('.sidebar').classList.toggle('open'); document.getElementById('mobileOverlay').classList.toggle('show'); }
 function closeMobileMenu(){ document.querySelector('.sidebar').classList.remove('open'); document.getElementById('mobileOverlay').classList.remove('show'); }
 
@@ -3308,6 +3409,7 @@ function rerender(){
   if(document.getElementById('tab-creatives').classList.contains('active')) renderCreativeTab();
   if(document.getElementById('tab-forecast').classList.contains('active')) renderForecastTab();
   if(document.getElementById('tab-finance').classList.contains('active')) renderFinanceTab();
+  if(document.getElementById('tab-notifications').classList.contains('active')) renderNotificationsTab();
 }
 
 function init(){
@@ -3315,8 +3417,6 @@ function init(){
   applyChartTheming();
   const savedTheme = localStorage.getItem('gos_theme') || 'light';
   document.documentElement.setAttribute('data-theme', savedTheme);
-  document.getElementById('theme-btn-light').classList.toggle('active', savedTheme==='light');
-  document.getElementById('theme-btn-dark').classList.toggle('active', savedTheme==='dark');
   const r = computeRange(state.rangeMode);
   state.start = r.start; state.end = r.end;
   document.getElementById('customFrom').value = state.start;
@@ -3325,7 +3425,6 @@ function init(){
   buildCampaignWindows();
   populateCreativeCampaignFilter();
   populateCreativeAdsetFilter();
-  renderDataNotes();
   showTab(firstAllowedTab());
   rerender();
 }
