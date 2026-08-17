@@ -678,7 +678,7 @@ canvas{max-width:100%;}
         <div class="table-scroll"><table><thead><tr><th>Metric</th><th class="num">This period</th><th class="num">Prior period</th><th class="num">Change</th></tr></thead><tbody id="dailyTotalsBody"></tbody></table></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div><h3>Daily breakdown</h3><p id="dailyRangeSubtitle">Every day in the selected range, oldest first. Spend/reach/impressions/CTR/link clicks are winning campaigns only. Reach is a raw daily sum (not deduplicated the way Meta's monthly blended export is).</p></div></div>
+        <div class="panel-head"><div><h3>Daily breakdown</h3><p id="dailyRangeSubtitle">Every day in the selected range, most recent first. Spend/reach/impressions/CTR/link clicks are winning campaigns only. Reach is a raw daily sum (not deduplicated the way Meta's monthly blended export is).</p></div></div>
         <div class="table-scroll"><table><thead><tr>
           <th>Date</th><th class="num">Winning Spend</th><th class="num">Winning Reach</th><th class="num">Winning Impressions</th><th class="num">Winning Weighted CTR</th><th class="num">Winning Link Clicks</th>
           <th class="num">Website Visits</th><th class="num">Website &rarr; Appt %</th><th class="num"><span class="ops-fresh-slot"></span>Appointments Booked</th><th class="num">Appointments Scheduled</th><th class="num">Appt &rarr; Visit %</th>
@@ -2064,7 +2064,7 @@ function renderDailyTab(){
   });
   document.getElementById('dailyTotalsBody').innerHTML = html;
 
-  const dates = dateRangeList(state.start, state.end);
+  const dates = dateRangeList(state.start, state.end).slice().reverse();
   let rowsHtml = '';
   dates.forEach(date => {
     const d = dailyRowMetrics(storeList, regionList, date, date);
@@ -2087,7 +2087,7 @@ function renderDailyTab(){
       + '</tr>';
   });
   document.getElementById('dailyNumbersBody').innerHTML = rowsHtml;
-  document.getElementById('dailyRangeSubtitle').textContent = 'Every day from '+state.start+' to '+state.end+', oldest first ('+dates.length+' days). Spend/reach/impressions/CTR/link clicks are winning campaigns only. Appointments Booked uses the appointments tracker export (only available from the day it started); Appointments Scheduled uses the Ops report. Coloured numbers are paced against your monthly goal for that metric (green: on or above goal pace, yellow: within 10% of goal pace, red: more than 10% below).';
+  document.getElementById('dailyRangeSubtitle').textContent = 'Every day from '+state.start+' to '+state.end+', most recent first ('+dates.length+' days). Spend/reach/impressions/CTR/link clicks are winning campaigns only. Appointments Booked uses the appointments tracker export (only available from the day it started); Appointments Scheduled uses the Ops report. Coloured numbers are paced against your monthly goal for that metric (green: on or above goal pace, yellow: within 10% of goal pace, red: more than 10% below).';
   equalizeGoalPaceWidths('dailyNumbersBody');
 }
 // All the goal-pace tags (across every metric column) are forced to the same
