@@ -110,7 +110,22 @@ body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 .chip-row{display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);padding:4px;border-radius:10px;}
 .chip{border:none;background:none;padding:7px 12px;border-radius:8px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
 .chip.active{background:var(--accent);color:#fff;font-weight:600;}
-.select-input{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);font-size:12.5px;color:var(--ink-soft);}
+.select-input{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);font-size:12.5px;color:var(--ink-soft);font-family:inherit;}
+/* Native <select> chrome (the closed box, the built-in arrow, the font used)
+   varies a lot between desktop browsers and mobile browsers/OSes. Turning off
+   the native appearance and drawing our own arrow keeps the closed box
+   identical everywhere; the open dropdown list itself is still each device's
+   native picker (that part can't be restyled without replacing <select>
+   entirely), which is expected, standard behavior across the web. */
+select.select-input{
+  appearance:none; -webkit-appearance:none; -moz-appearance:none;
+  padding-right:28px; cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235b5f78' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; background-size:10px 6px;
+}
+html[data-theme="dark"] select.select-input{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a7acc2' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
 
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:20px;}
 .kpi-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px;box-shadow:var(--shadow);}
@@ -283,6 +298,11 @@ canvas{max-width:100%;}
   .toolbar{width:100%; flex-wrap:wrap; gap:8px;}
   .chip-row{flex-wrap:wrap;}
   .select-input{flex:1 1 auto;}
+  /* iOS Safari auto-zooms the page when a form control with font-size under
+     16px is focused, which is a big part of why dropdowns feel jarring and
+     inconsistent on mobile. Bumping to 16px here (desktop keeps 12.5px)
+     avoids that zoom without changing the compact desktop look. */
+  select.select-input, input.select-input[type="date"]{font-size:16px;}
 
   .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px;}
   .kpi-card{padding:12px;}
@@ -509,6 +529,7 @@ canvas{max-width:100%;}
           <button class="chip region-chip" data-region="virtual" onclick="setRegion('virtual')">Virtual</button>
         </div>
         <select class="select-input" id="rangeSelect" onchange="onRangeSelectChange()">
+          <option value="yesterday">Yesterday</option>
           <option value="last7">Last 7 Days</option>
           <option value="last30">Last 30 Days</option>
           <option value="mtd" selected>Month to date</option>
@@ -1184,9 +1205,25 @@ function formatVal(val, format){
 let state = { region: 'all', rangeMode: 'mtd', start: null, end: null, compare: 'prior' };
 function dataMax(){ return DATA.meta.date_max; }
 function dataMin(){ return DATA.meta.date_min; }
+// Real-world "today" using the browser's local calendar date (not UTC), so it
+// matches the date the person looking at the dashboard would actually call
+// "today" wherever they are, rather than shifting a day around midnight UTC.
+function todayStr(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 
 function computeRange(mode){
   const max = dataMax();
+  // "Yesterday" means actual calendar yesterday (today minus 1 day), not
+  // "the day before whatever the dashboard's latest data happens to be" — if
+  // the data pipeline is running a day or more behind (as it often is), that
+  // would silently show an older day than the person actually asked for.
+  // Clamped to dataMax() so it never points at a day with no data yet.
+  if(mode === 'yesterday'){
+    const y = addDaysStr(todayStr(), -1);
+    return {start: y > max ? max : y, end: y > max ? max : y};
+  }
   if(mode === 'last7') return {start: addDaysStr(max,-6), end: max};
   if(mode === 'last30') return {start: addDaysStr(max,-29), end: max};
   if(mode === 'mtd'){ const d = max.slice(0,7)+'-01'; return {start: d, end: max}; }
