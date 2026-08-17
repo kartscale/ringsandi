@@ -147,6 +147,10 @@ body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 .badge.amber{background:var(--amber-bg);color:var(--amber);}
 .badge.neutral{background:var(--line);color:var(--ink-soft);}
 .badge.learning{background:var(--learning-bg);color:var(--learning);}
+.goal-pace-good,.goal-pace-warn,.goal-pace-bad{display:inline-block;font-weight:700;border-radius:6px;padding:2px 7px;font-variant-numeric:tabular-nums;text-align:center;box-sizing:border-box;}
+.goal-pace-good{background:var(--good-bg);color:var(--good);}
+.goal-pace-warn{background:var(--amber-bg);color:var(--amber);}
+.goal-pace-bad{background:var(--warn-bg);color:var(--warn);}
 
 table{width:100%;border-collapse:collapse;font-size:12.8px;}
 th{text-align:left;color:var(--ink-faint);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.03em;padding:8px 10px;border-bottom:1px solid var(--line);}
@@ -674,7 +678,7 @@ canvas{max-width:100%;}
         <div class="table-scroll"><table><thead><tr><th>Metric</th><th class="num">This period</th><th class="num">Prior period</th><th class="num">Change</th></tr></thead><tbody id="dailyTotalsBody"></tbody></table></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div><h3>Daily breakdown</h3><p id="dailyRangeSubtitle">Every day in the selected range, most recent first. Spend/reach/impressions/CTR/link clicks are winning campaigns only. Reach is a raw daily sum (not deduplicated the way Meta's monthly blended export is).</p></div></div>
+        <div class="panel-head"><div><h3>Daily breakdown</h3><p id="dailyRangeSubtitle">Every day in the selected range, oldest first. Spend/reach/impressions/CTR/link clicks are winning campaigns only. Reach is a raw daily sum (not deduplicated the way Meta's monthly blended export is).</p></div></div>
         <div class="table-scroll"><table><thead><tr>
           <th>Date</th><th class="num">Winning Spend</th><th class="num">Winning Reach</th><th class="num">Winning Impressions</th><th class="num">Winning Weighted CTR</th><th class="num">Winning Link Clicks</th>
           <th class="num">Website Visits</th><th class="num">Website &rarr; Appt %</th><th class="num"><span class="ops-fresh-slot"></span>Appointments Booked</th><th class="num">Appointments Scheduled</th><th class="num">Appt &rarr; Visit %</th>
@@ -1997,6 +2001,52 @@ const DAILY_METRICS = [
   {key:'conversions', label:'Conversions', format:'num'},
   {key:'cost_per_walkin', label:'Cost / Walkin', format:'currency'},
 ];
+// Maps a Daily breakdown column to its matching Goal tab metric, so a single
+// day's number can be judged against your monthly goal. Only columns with a
+// real goal counterpart are included; columns like Walkins, Total Visits,
+// Conversions and Cost / Walkin have no goal set anywhere in the app and are
+// left uncoloured. Spend is also left uncoloured since its goal direction is
+// "neutral" (there's no good/bad side to spending more or less against plan).
+const DAILY_TO_GOAL_KEY = {
+  reach: 'reach', impressions: 'impressions', ctr: 'ctr', link_clicks: 'link_clicks',
+  website_visitors: 'website_visitors', web_to_appt: 'lp_to_appt',
+  appointments_booked: 'appointments_booked', appointments_scheduled: 'appointments_scheduled',
+  first_visits: 'total_first_visits',
+};
+// Rate goals (CTR, Website -> Appt %) compare directly against a single day's
+// rate. Count goals (Reach, Appointments Booked, etc.) are monthly totals, so
+// they're pro-rated into a fair daily target (monthly goal / days in that
+// day's month) before comparing, the same pacing logic the Goal tab itself
+// uses for "Goal to date".
+function goalPaceClass(dailyKey, value, dateStr){
+  // Never colour a field that's currently masked (PIN 0301) — a red/green
+  // hint would leak whether the hidden number is above or below goal even
+  // though the figure itself is redacted.
+  if(sessionStorage.getItem('gos_pin_key') === '0301' && MASKED_METRIC_KEYS.indexOf(dailyKey) !== -1) return null;
+  const goalKey = DAILY_TO_GOAL_KEY[dailyKey];
+  if(!goalKey) return null;
+  const gm = GOAL_METRICS.find(m => m.key === goalKey);
+  if(!gm || gm.goodDir === 'neutral') return null;
+  const goals = loadGoals();
+  const monthlyTarget = goals[goalKey];
+  if(!monthlyTarget) return null;
+  let dailyTarget = monthlyTarget;
+  if(gm.kind !== 'ratio'){
+    const parts = dateStr.split('-').map(Number);
+    const daysInMonth = new Date(Date.UTC(parts[0], parts[1], 0)).getUTCDate();
+    dailyTarget = monthlyTarget / daysInMonth;
+  }
+  if(value === null || value === undefined || !dailyTarget) return null;
+  const ratio = value / dailyTarget;
+  const hit = gm.goodDir === 'down' ? ratio <= 1 : ratio >= 1;
+  if(hit) return 'goal-pace-good';
+  const nearMiss = gm.goodDir === 'down' ? ratio <= 1.1 : ratio >= 0.9;
+  return nearMiss ? 'goal-pace-warn' : 'goal-pace-bad';
+}
+function goalPaceSpan(dailyKey, value, dateStr, text){
+  const cls = goalPaceClass(dailyKey, value, dateStr);
+  return cls ? '<span class="'+cls+'">'+text+'</span>' : text;
+}
 function renderDailyTab(){
   const storeList = storesForRegion(state.region);
   const regionList = regionsForFilter(state.region);
@@ -2014,30 +2064,47 @@ function renderDailyTab(){
   });
   document.getElementById('dailyTotalsBody').innerHTML = html;
 
-  const dates = dateRangeList(state.start, state.end).slice().reverse();
+  const dates = dateRangeList(state.start, state.end);
   let rowsHtml = '';
   dates.forEach(date => {
     const d = dailyRowMetrics(storeList, regionList, date, date);
     rowsHtml += '<tr><td>'+date+'</td>'
       + '<td class="num">'+fmtSpend(d.spend)+'</td>'
-      + '<td class="num">'+fmtNum(d.reach)+'</td>'
-      + '<td class="num">'+fmtNum(d.impressions)+'</td>'
-      + '<td class="num">'+fmtPct(d.ctr,2)+'</td>'
-      + '<td class="num">'+fmtNum(d.link_clicks)+'</td>'
-      + '<td class="num">'+fmtCount(d.website_visitors)+'</td>'
-      + '<td class="num">'+fmtPct(d.web_to_appt)+'</td>'
-      + '<td class="num">'+fmtCount(d.appointments_booked)+'</td>'
-      + '<td class="num">'+fmtCount(d.appointments_scheduled)+'</td>'
+      + '<td class="num">'+goalPaceSpan('reach', d.reach, date, fmtNum(d.reach))+'</td>'
+      + '<td class="num">'+goalPaceSpan('impressions', d.impressions, date, fmtNum(d.impressions))+'</td>'
+      + '<td class="num">'+goalPaceSpan('ctr', d.ctr, date, fmtPct(d.ctr,2))+'</td>'
+      + '<td class="num">'+goalPaceSpan('link_clicks', d.link_clicks, date, fmtNum(d.link_clicks))+'</td>'
+      + '<td class="num">'+goalPaceSpan('website_visitors', d.website_visitors, date, fmtCount(d.website_visitors))+'</td>'
+      + '<td class="num">'+goalPaceSpan('web_to_appt', d.web_to_appt, date, fmtPct(d.web_to_appt))+'</td>'
+      + '<td class="num">'+goalPaceSpan('appointments_booked', d.appointments_booked, date, fmtCount(d.appointments_booked))+'</td>'
+      + '<td class="num">'+goalPaceSpan('appointments_scheduled', d.appointments_scheduled, date, fmtCount(d.appointments_scheduled))+'</td>'
       + '<td class="num">'+fmtPct(d.appt_to_visit)+'</td>'
       + '<td class="num">'+fmtCount(d.walkins)+'</td>'
       + '<td class="num">'+fmtCount(d.total_visits)+'</td>'
-      + '<td class="num">'+fmtCount(d.first_visits)+'</td>'
+      + '<td class="num">'+goalPaceSpan('first_visits', d.first_visits, date, fmtCount(d.first_visits))+'</td>'
       + '<td class="num">'+fmtCount(d.conversions)+'</td>'
       + '<td class="num">'+fmtSpend(d.cost_per_walkin)+'</td>'
       + '</tr>';
   });
   document.getElementById('dailyNumbersBody').innerHTML = rowsHtml;
-  document.getElementById('dailyRangeSubtitle').textContent = 'Every day from '+state.start+' to '+state.end+', most recent first ('+dates.length+' days). Spend/reach/impressions/CTR/link clicks are winning campaigns only. Appointments Booked uses the appointments tracker export (only available from the day it started); Appointments Scheduled uses the Ops report.';
+  document.getElementById('dailyRangeSubtitle').textContent = 'Every day from '+state.start+' to '+state.end+', oldest first ('+dates.length+' days). Spend/reach/impressions/CTR/link clicks are winning campaigns only. Appointments Booked uses the appointments tracker export (only available from the day it started); Appointments Scheduled uses the Ops report. Coloured numbers are paced against your monthly goal for that metric (green: on or above goal pace, yellow: within 10% of goal pace, red: more than 10% below).';
+  equalizeGoalPaceWidths('dailyNumbersBody');
+}
+// All the goal-pace tags (across every metric column) are forced to the same
+// width, taken from whichever tag currently renders widest. Recomputed after
+// every render rather than hardcoded, so if a wider value shows up in a
+// different column tomorrow (a different metric becomes the widest), the
+// whole set re-aligns to that new width automatically.
+function equalizeGoalPaceWidths(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const els = container.querySelectorAll('.goal-pace-good, .goal-pace-warn, .goal-pace-bad');
+  if(!els.length) return;
+  els.forEach(el => { el.style.width = ''; });
+  let max = 0;
+  els.forEach(el => { if(el.offsetWidth > max) max = el.offsetWidth; });
+  if(!max) return;
+  els.forEach(el => { el.style.width = max + 'px'; });
 }
 
 /* ---------- Walk in forecast ---------- */
