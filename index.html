@@ -401,6 +401,8 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
 .creative-subtab-btn.active{background:var(--accent-soft);color:var(--accent);border-color:transparent;}
 .creative-subtab-pane{display:none;}
 .creative-subtab-pane.active{display:block;}
+.report-subtab-pane{display:none;}
+.report-subtab-pane.active{display:block;}
 
 .creative-card{position:relative;}
 .creative-select-wrap{position:absolute;top:10px;right:10px;z-index:2;}
@@ -544,7 +546,11 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
     </div>
     <div class="nav-group">
       <div class="nav-label">Reports</div>
-      <button class="nav-btn" data-tab="reports" onclick="showTab('reports')"><span class="ic">&#9776;</span>Reports</button>
+      <button class="nav-btn" data-tab="reports" onclick="openReportsBuildFresh()"><span class="ic">&#9776;</span>Reports<span class="nav-chevron" id="reportsNavChevron">&#9662;</span></button>
+      <div class="nav-subgroup" id="reportsNavSubgroup">
+        <button class="nav-subbtn" data-subtab="build" onclick="openReportsBuildFresh()">Build Report</button>
+        <button class="nav-subbtn" data-subtab="saved" onclick="openReportsSubtab('saved')">Saved Reports</button>
+      </div>
     </div>
     <div class="sidebar-foot">
       <span class="sidebar-foot-label">Logged in as Rings &amp; I</span><br>
@@ -824,82 +830,111 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
     <!-- REPORTS -->
     <div class="tab-content" id="tab-reports">
       <div class="panel">
-        <div class="panel-head">
-          <div><h3>Build your own report</h3><p>Uses the date range and region selected in the toolbar above. Pick what to break the report down by, tick the columns you want, then export.</p></div>
-          <div class="panel-controls no-print">
-            <div class="export-menu-wrap">
-              <button type="button" class="chip active" onclick="toggleExportMenu('reportsExportMenu')">Export &#9662;</button>
-              <div class="export-menu" id="reportsExportMenu">
-                <button type="button" onclick="downloadReportsPdf();closeExportMenus();">Export as PDF</button>
-                <button type="button" onclick="downloadReportsCsv();closeExportMenus();">Export as CSV</button>
+        <div class="report-subtab-pane active" id="reportsSubtab-build">
+          <div class="panel-head">
+            <div><h3>Build your own report</h3><p>Uses the date range and region selected in the toolbar above. Pick what to break the report down by, tick the columns you want, then export.</p></div>
+            <div class="panel-controls no-print">
+              <button type="button" class="chip" onclick="openSaveReportModal()">Save report</button>
+              <div class="export-menu-wrap">
+                <button type="button" class="chip active" onclick="toggleExportMenu('reportsExportMenu')">Export &#9662;</button>
+                <div class="export-menu" id="reportsExportMenu">
+                  <button type="button" onclick="downloadReportsPdf();closeExportMenus();">Export as PDF</button>
+                  <button type="button" onclick="downloadReportsCsv();closeExportMenus();">Export as CSV</button>
+                </div>
               </div>
             </div>
           </div>
+          <div class="report-builder-row no-print">
+            <div class="report-builder-field">
+              <label>Break down by</label>
+              <select class="select-input" id="reportDimensionSelect" onchange="onReportDimensionChange()">
+                <option value="campaign">Campaign</option>
+                <option value="adset">Ad set</option>
+                <option value="creative">Creative</option>
+                <option value="store">Store</option>
+                <option value="region">Region</option>
+              </select>
+            </div>
+            <div class="report-builder-field">
+              <label>Group by</label>
+              <select class="select-input" id="reportGroupBy" onchange="renderReportsTab()">
+                <option value="none">None</option>
+                <option value="day">Day</option>
+                <option value="month">Month</option>
+                <option value="year">Year</option>
+              </select>
+            </div>
+            <div class="report-builder-field" id="reportSubTypeField">
+              <label>Campaign type</label>
+              <select class="select-input" id="reportSubTypeFilter" onchange="renderReportsTab()">
+                <option value="all">All (winning + testing)</option>
+                <option value="winning">Winning only</option>
+                <option value="testing">Testing only</option>
+              </select>
+            </div>
+            <div class="report-builder-field" id="reportStatusField">
+              <label>Creative status</label>
+              <select class="select-input" id="reportStatusFilter" onchange="renderReportsTab()">
+                <option value="all">All creatives</option>
+                <option value="active">Active only</option>
+                <option value="inactive">Inactive only</option>
+              </select>
+            </div>
+            <div class="report-builder-field" id="reportRegionField">
+              <label>Region</label>
+              <select class="select-input" id="reportRegionFilter" onchange="renderReportsTab()">
+                <option value="all">All regions</option>
+                <option value="pune">Pune</option>
+                <option value="mumbai">Mumbai</option>
+                <option value="virtual">Virtual</option>
+              </select>
+            </div>
+            <div class="report-builder-field" id="reportStoreField">
+              <label>Store</label>
+              <select class="select-input" id="reportStoreFilter" onchange="renderReportsTab()">
+                <option value="all">All stores</option>
+                <option value="sadashivpeth">Sadashivpeth, Pune</option>
+                <option value="borivali">Borivali, Mumbai</option>
+                <option value="andheri">Andheri, Mumbai</option>
+                <option value="virtual">Virtual</option>
+              </select>
+            </div>
+          </div>
+          <div class="report-builder-metrics no-print">
+            <label>Columns</label>
+            <div id="reportMetricsList" class="report-metrics-list"></div>
+          </div>
+          <div id="reportsPrintArea">
+            <div class="export-print-head" id="reportsPrintHead"></div>
+            <p class="impact-note" id="reportsSubtitle" style="margin:0 0 12px;"></p>
+            <div class="table-scroll"><table><thead id="reportsTableHead"></thead><tbody id="reportsTableBody"></tbody></table></div>
+          </div>
         </div>
-        <div class="report-builder-row no-print">
-          <div class="report-builder-field">
-            <label>Break down by</label>
-            <select class="select-input" id="reportDimensionSelect" onchange="onReportDimensionChange()">
-              <option value="campaign">Campaign</option>
-              <option value="adset">Ad set</option>
-              <option value="creative">Creative</option>
-              <option value="store">Store</option>
-              <option value="region">Region</option>
-            </select>
+
+        <div class="report-subtab-pane" id="reportsSubtab-saved">
+          <div id="savedReportsListView">
+            <div class="panel-head">
+              <div><h3>Saved reports</h3><p>Reports saved from the builder. Only visible to this PIN, and stays saved across logins.</p></div>
+            </div>
+            <div class="table-scroll"><table><thead><tr><th>Name</th><th>Breakdown</th><th>Saved</th><th class="no-print"></th></tr></thead><tbody id="savedReportsListBody"></tbody></table></div>
           </div>
-          <div class="report-builder-field">
-            <label>Group by</label>
-            <select class="select-input" id="reportGroupBy" onchange="renderReportsTab()">
-              <option value="none">None</option>
-              <option value="day">Day</option>
-              <option value="month">Month</option>
-              <option value="year">Year</option>
-            </select>
+          <div id="savedReportsDetailView" style="display:none;">
+            <div class="panel-head">
+              <div><h3 id="savedReportDetailTitle"></h3><p id="savedReportDetailSubtitle"></p></div>
+              <div class="panel-controls no-print">
+                <button type="button" class="chip" onclick="backToSavedReportsList()">&larr; Back to list</button>
+                <button type="button" class="chip active" onclick="editSavedReport()">Edit</button>
+                <div class="export-menu-wrap">
+                  <button type="button" class="chip" onclick="toggleExportMenu('savedReportExportMenu')">Export &#9662;</button>
+                  <div class="export-menu" id="savedReportExportMenu">
+                    <button type="button" onclick="downloadSavedReportPdf();closeExportMenus();">Export as PDF</button>
+                    <button type="button" onclick="downloadSavedReportCsv();closeExportMenus();">Export as CSV</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="table-scroll"><table><thead id="savedReportDetailHead"></thead><tbody id="savedReportDetailBody"></tbody></table></div>
           </div>
-          <div class="report-builder-field" id="reportSubTypeField">
-            <label>Campaign type</label>
-            <select class="select-input" id="reportSubTypeFilter" onchange="renderReportsTab()">
-              <option value="all">All (winning + testing)</option>
-              <option value="winning">Winning only</option>
-              <option value="testing">Testing only</option>
-            </select>
-          </div>
-          <div class="report-builder-field" id="reportStatusField">
-            <label>Creative status</label>
-            <select class="select-input" id="reportStatusFilter" onchange="renderReportsTab()">
-              <option value="all">All creatives</option>
-              <option value="active">Active only</option>
-              <option value="inactive">Inactive only</option>
-            </select>
-          </div>
-          <div class="report-builder-field" id="reportRegionField">
-            <label>Region</label>
-            <select class="select-input" id="reportRegionFilter" onchange="renderReportsTab()">
-              <option value="all">All regions</option>
-              <option value="pune">Pune</option>
-              <option value="mumbai">Mumbai</option>
-              <option value="virtual">Virtual</option>
-            </select>
-          </div>
-          <div class="report-builder-field" id="reportStoreField">
-            <label>Store</label>
-            <select class="select-input" id="reportStoreFilter" onchange="renderReportsTab()">
-              <option value="all">All stores</option>
-              <option value="sadashivpeth">Sadashivpeth, Pune</option>
-              <option value="borivali">Borivali, Mumbai</option>
-              <option value="andheri">Andheri, Mumbai</option>
-              <option value="virtual">Virtual</option>
-            </select>
-          </div>
-        </div>
-        <div class="report-builder-metrics no-print">
-          <label>Columns</label>
-          <div id="reportMetricsList" class="report-metrics-list"></div>
-        </div>
-        <div id="reportsPrintArea">
-          <div class="export-print-head" id="reportsPrintHead"></div>
-          <p class="impact-note" id="reportsSubtitle" style="margin:0 0 12px;"></p>
-          <div class="table-scroll"><table><thead id="reportsTableHead"></thead><tbody id="reportsTableBody"></tbody></table></div>
         </div>
       </div>
     </div>
@@ -927,6 +962,24 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
           <button class="modal-close" onclick="closeModal()">&times;</button>
         </div>
         <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="saveReportModal" onclick="if(event.target===this)closeSaveReportModal()">
+      <div class="modal-box">
+        <div class="modal-head">
+          <div><h3 id="saveReportModalTitle">Save report</h3><p id="saveReportModalDesc">Saves the current breakdown, group by, filters and columns under a name. Only visible to this PIN, and stays saved across logins.</p></div>
+          <button class="modal-close" onclick="closeSaveReportModal()">&times;</button>
+        </div>
+        <div class="goal-input-card" style="margin-top:6px;">
+          <label>Report name</label>
+          <input type="text" class="select-input" id="saveReportNameInput" placeholder="e.g. Winning campaigns by month" style="width:100%;box-sizing:border-box;" onkeydown="if(event.key==='Enter') saveCurrentReport()">
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+          <button type="button" class="chip" id="saveAsNewReportBtn" style="display:none;" onclick="saveCurrentReport(true)">Save as new</button>
+          <button type="button" class="chip" onclick="closeSaveReportModal()">Cancel</button>
+          <button type="button" class="chip active" id="saveReportSaveBtn" onclick="saveCurrentReport(false)">Save</button>
+        </div>
       </div>
     </div>
   </div>
@@ -3943,13 +3996,19 @@ function reportMergeRows(dayRows, groupBy){
     return {label: row.entity, period, bucket: row.bucket, raw: row.raw};
   });
 }
-function reportRowsForDimension(dim){
+// Day-level rows for a report, driven by a plain config object rather than
+// reading form fields directly — used both by the live builder (whose
+// config comes from captureCurrentReportConfig()) and by a saved report's
+// read-only detail view (whose config comes from what was saved), so both
+// share exactly one computation path.
+function reportRowsForConfig(config){
+  const dim = config.dimension;
   const regionList = regionsForFilter(state.region);
-  const subType = document.getElementById('reportSubTypeFilter').value;
-  const statusFilter = document.getElementById('reportStatusFilter').value;
-  const regionFilter = document.getElementById('reportRegionFilter').value;
-  const storeFilter = document.getElementById('reportStoreFilter').value;
-  const groupBy = document.getElementById('reportGroupBy').value;
+  const subType = config.subType || 'all';
+  const statusFilter = config.status || 'all';
+  const regionFilter = config.region || 'all';
+  const storeFilter = config.store || 'all';
+  const groupBy = config.groupBy || 'none';
   let dayRows;
   if(dim === 'campaign') dayRows = campaignDayRows(regionList, subType, state.start, state.end);
   else if(dim === 'adset') dayRows = adsetDayRows(regionList, subType, state.start, state.end);
@@ -3958,14 +4017,18 @@ function reportRowsForDimension(dim){
   else dayRows = regionDayRows(regionList, regionFilter, subType, state.start, state.end);
   return reportMergeRows(dayRows, groupBy);
 }
-let reportsCurrent = null;
-function renderReportsTab(){
-  const dim = document.getElementById('reportDimensionSelect').value;
+// Computes a full report result (title/headers/rows plus a couple of shape
+// hints used when rendering) from a config object and the toolbar's current
+// date range/region. Pure with respect to the DOM — everything it needs
+// comes in through config, so it works identically for the live builder and
+// for a saved report's read-only view.
+function computeReportResult(config){
+  const dim = config.dimension && REPORT_DIMENSIONS[config.dimension] ? config.dimension : 'campaign';
   const def = REPORT_DIMENSIONS[dim];
-  const groupBy = document.getElementById('reportGroupBy').value;
+  const groupBy = config.groupBy || 'none';
   const periodLabel = groupBy === 'day' ? 'Date' : groupBy === 'month' ? 'Month' : 'Year';
-  const metricKeys = reportSelectedMetrics();
-  let rows = reportRowsForDimension(dim);
+  const metricKeys = (config.metricKeys||[]).filter(k => def.metrics.includes(k));
+  let rows = reportRowsForConfig(Object.assign({}, config, {dimension: dim}));
   rows.forEach(r => { r.values = metricKeys.map(k => REPORT_METRIC_FORMULAS[k](r.raw)); });
   if(metricKeys.length){
     if(groupBy === 'none'){
@@ -3984,27 +4047,40 @@ function renderReportsTab(){
       });
     }
   }
-  const genDate = new Date().toISOString().slice(0,10);
   const titleSuffix = groupBy === 'none' ? '' : (', by '+periodLabel);
-  reportsCurrent = {
+  const leadCols = groupBy === 'none' ? 1 : 2;
+  return {
     title: 'By '+def.label+titleSuffix,
     headers: [def.label].concat(groupBy === 'none' ? [] : [periodLabel]).concat(metricKeys.map(k => REPORT_METRIC_META[k].label)),
     rows: rows.map(r => [r.label].concat(groupBy === 'none' ? [] : [r.period]).concat(r.values.map((v,i) => formatVal(v, REPORT_METRIC_META[metricKeys[i]].format)))),
+    leadCols, metricKeysCount: metricKeys.length, rowCount: rows.length,
   };
-  document.getElementById('reportsPrintHead').innerHTML = '<h2>Rings &amp; I &mdash; '+esc(reportsCurrent.title)+' Report</h2><p>Generated '+genDate+'</p>';
-  document.getElementById('reportsSubtitle').textContent = state.start+' to '+state.end+', '+REGION_LABEL[state.region]+' · '+rows.length+' rows';
-  document.getElementById('reportsTableHead').innerHTML = '<tr>'+reportsCurrent.headers.map((h,i) => '<th'+(i < (groupBy==='none'?1:2) ? '' : ' class="num"')+'>'+esc(h)+'</th>').join('')+'</tr>';
-  const body = document.getElementById('reportsTableBody');
-  const leadCols = groupBy === 'none' ? 1 : 2;
-  if(!metricKeys.length){
-    body.innerHTML = '<tr><td><p class="impact-note">Tick at least one column above to build the report.</p></td></tr>';
+}
+// Shared rendering into any {headHead, body, printHead, subtitle} set of
+// elements, so the live builder table and the saved-report detail table
+// (different DOM ids, identical shape) don't need two copies of this logic.
+function renderReportResultInto(result, ids){
+  if(ids.printHead) document.getElementById(ids.printHead).innerHTML = '<h2>Rings &amp; I &mdash; '+esc(result.title)+' Report</h2><p>Generated '+new Date().toISOString().slice(0,10)+'</p>';
+  if(ids.subtitle) document.getElementById(ids.subtitle).textContent = state.start+' to '+state.end+', '+REGION_LABEL[state.region]+' · '+result.rowCount+' rows';
+  document.getElementById(ids.head).innerHTML = '<tr>'+result.headers.map((h,i) => '<th'+(i < result.leadCols ? '' : ' class="num"')+'>'+esc(h)+'</th>').join('')+'</tr>';
+  const body = document.getElementById(ids.body);
+  if(!result.metricKeysCount){
+    body.innerHTML = '<tr><td><p class="impact-note">'+esc(ids.emptyMetricsMsg||'Tick at least one column to build the report.')+'</p></td></tr>';
     return;
   }
-  if(!rows.length){
-    body.innerHTML = '<tr><td colspan="'+(leadCols+metricKeys.length)+'"><p class="impact-note">No data for this range/filter combination.</p></td></tr>';
+  if(!result.rowCount){
+    body.innerHTML = '<tr><td colspan="'+(result.leadCols+result.metricKeysCount)+'"><p class="impact-note">No data for this range/filter combination.</p></td></tr>';
     return;
   }
-  body.innerHTML = reportsCurrent.rows.map(r => '<tr>'+r.map((v,i) => '<td'+(i < leadCols ? '' : ' class="num"')+'>'+esc(v)+'</td>').join('')+'</tr>').join('');
+  body.innerHTML = result.rows.map(r => '<tr>'+r.map((v,i) => '<td'+(i < result.leadCols ? '' : ' class="num"')+'>'+esc(v)+'</td>').join('')+'</tr>').join('');
+}
+let reportsCurrent = null;
+function renderReportsTab(){
+  reportsCurrent = computeReportResult(captureCurrentReportConfig());
+  renderReportResultInto(reportsCurrent, {
+    printHead: 'reportsPrintHead', subtitle: 'reportsSubtitle', head: 'reportsTableHead', body: 'reportsTableBody',
+    emptyMetricsMsg: 'Tick at least one column above to build the report.',
+  });
 }
 function downloadReportsPdf(){
   window.print();
@@ -4014,6 +4090,204 @@ function downloadReportsCsv(){
   const dim = document.getElementById('reportDimensionSelect').value;
   const csv = toCsv(reportsCurrent.headers, reportsCurrent.rows);
   downloadCsv('rings-and-i-report-'+dim+'-'+state.start+'-to-'+state.end+'.csv', csv);
+}
+
+/* ---------- Save report (per-PIN, persists across logins) ----------
+   Saves the report *definition* (dimension, group by, filters, columns),
+   not a frozen snapshot of numbers, so reopening a saved report re-runs it
+   against whatever date range/region is currently selected in the toolbar,
+   same as Meta's own saved reports. Stored in localStorage (not
+   sessionStorage) so it survives logout/login and closing the browser, and
+   keyed by the logged-in PIN so each PIN only ever sees its own saved
+   reports, never another PIN's.
+
+   The Saved Reports subtab only ever shows a read-only result (list, or one
+   report's table) — the breakdown/filter/column controls that could change
+   a saved report only appear back on the Build Report subtab, reached via
+   the Edit button, which is the only way to change what a saved report
+   actually contains. */
+function savedReportsStorageKey(){
+  const pin = sessionStorage.getItem('gos_pin_key') || 'anon';
+  return 'gos_saved_reports_'+pin;
+}
+function loadSavedReports(){
+  try{ return JSON.parse(localStorage.getItem(savedReportsStorageKey())) || []; }catch(e){ return []; }
+}
+function saveSavedReportsList(list){ localStorage.setItem(savedReportsStorageKey(), JSON.stringify(list)); }
+function captureCurrentReportConfig(){
+  return {
+    dimension: document.getElementById('reportDimensionSelect').value,
+    groupBy: document.getElementById('reportGroupBy').value,
+    subType: document.getElementById('reportSubTypeFilter').value,
+    status: document.getElementById('reportStatusFilter').value,
+    region: document.getElementById('reportRegionFilter').value,
+    store: document.getElementById('reportStoreFilter').value,
+    metricKeys: Array.from(reportSelectedMetricKeys),
+  };
+}
+// Restores a saved definition into the builder fields (including the
+// dimension-specific field visibility that onReportDimensionChange also
+// handles), then re-renders. Kept separate from onReportDimensionChange
+// itself, which resets the metrics checklist to that dimension's defaults —
+// here the saved metricKeys should win instead.
+function applyReportConfig(config){
+  if(!config) return;
+  const dim = config.dimension && REPORT_DIMENSIONS[config.dimension] ? config.dimension : 'campaign';
+  const def = REPORT_DIMENSIONS[dim];
+  document.getElementById('reportDimensionSelect').value = dim;
+  document.getElementById('reportSubTypeField').style.display = def.hasSubType ? '' : 'none';
+  document.getElementById('reportStatusField').style.display = def.hasStatus ? '' : 'none';
+  document.getElementById('reportRegionField').style.display = def.hasRegionFilter ? '' : 'none';
+  document.getElementById('reportStoreField').style.display = def.hasStoreFilter ? '' : 'none';
+  document.getElementById('reportGroupBy').value = config.groupBy || 'none';
+  document.getElementById('reportSubTypeFilter').value = config.subType || 'all';
+  document.getElementById('reportStatusFilter').value = config.status || 'all';
+  document.getElementById('reportRegionFilter').value = config.region || 'all';
+  document.getElementById('reportStoreFilter').value = config.store || 'all';
+  const validKeys = new Set(def.metrics);
+  const keys = (config.metricKeys||[]).filter(k => validKeys.has(k));
+  reportSelectedMetricKeys = new Set(keys.length ? keys : def.metrics.slice(0,4));
+  renderReportMetricsList(dim);
+  renderReportsTab();
+}
+
+/* ---------- Reports: Build/Saved subtabs ---------- */
+// Set only while actively editing an existing saved report (reached via its
+// Edit button); a plain visit to Build Report from the sidebar always clears
+// it first via openReportsBuildFresh(), so a fresh session never silently
+// overwrites an old saved report.
+let editingSavedReportId = null;
+let savedReportDetailId = null;
+let savedReportDetailCurrent = null;
+function setReportsSubtab(name){
+  document.querySelectorAll('.report-subtab-pane').forEach(p => p.classList.toggle('active', p.id === 'reportsSubtab-'+name));
+  document.querySelectorAll('.nav-subbtn').forEach(b => { if(b.dataset.subtab === 'build' || b.dataset.subtab === 'saved') b.classList.toggle('active', b.dataset.subtab === name); });
+  if(name === 'build'){
+    // reportSelectedMetricKeys only starts out empty before the very first
+    // render ever; once initialised it always holds at least one key, so an
+    // empty set here reliably means "first visit" rather than "user
+    // deselected every column". Only that first visit should run the full
+    // onReportDimensionChange() (which also sets dimension-specific field
+    // visibility) — every later visit to this subtab should leave whatever
+    // the user had selected alone, not silently reset it to defaults.
+    if(!reportSelectedMetricKeys.size) onReportDimensionChange();
+    else renderReportsTab();
+  }
+  if(name === 'saved') renderSavedReportsList();
+}
+function openReportsSubtab(name){
+  showTab('reports');
+  setReportsSubtab(name);
+}
+// The only entry point that should be wired to a plain "Reports"/"Build
+// Report" nav click — always starts a clean build session.
+function openReportsBuildFresh(){
+  editingSavedReportId = null;
+  openReportsSubtab('build');
+}
+function renderSavedReportsList(){
+  savedReportDetailId = null;
+  document.getElementById('savedReportsListView').style.display = '';
+  document.getElementById('savedReportsDetailView').style.display = 'none';
+  const list = loadSavedReports();
+  const tbody = document.getElementById('savedReportsListBody');
+  if(!list.length){
+    tbody.innerHTML = '<tr><td colspan="4"><p class="impact-note">No saved reports yet. Build a report on the Build Report tab and use Save report to keep it here.</p></td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.slice().reverse().map(r => {
+    const def = REPORT_DIMENSIONS[r.config.dimension];
+    const breakdown = (def?def.label:r.config.dimension) + (r.config.groupBy && r.config.groupBy !== 'none' ? ', by '+r.config.groupBy : '');
+    return '<tr>'
+      + '<td><a href="javascript:void(0)" onclick="openSavedReportDetail(\''+escJs(r.id)+'\')">'+esc(r.name)+'</a></td>'
+      + '<td>'+esc(breakdown)+'</td>'
+      + '<td>'+esc(fmtLongDate((r.savedAt||'').slice(0,10)))+'</td>'
+      + '<td class="no-print"><button type="button" class="chip" onclick="deleteSavedReportFromList(\''+escJs(r.id)+'\')">Delete</button></td>'
+      + '</tr>';
+  }).join('');
+}
+// Read-only: shows a saved report's own results table, never the breakdown/
+// filter/column controls that built it — those only live on the Build
+// Report subtab, reached via Edit.
+function openSavedReportDetail(id){
+  const report = loadSavedReports().find(r => r.id === id);
+  if(!report) return;
+  savedReportDetailId = id;
+  document.getElementById('savedReportsListView').style.display = 'none';
+  document.getElementById('savedReportsDetailView').style.display = '';
+  savedReportDetailCurrent = computeReportResult(report.config);
+  document.getElementById('savedReportDetailTitle').textContent = report.name;
+  renderReportResultInto(savedReportDetailCurrent, {
+    subtitle: 'savedReportDetailSubtitle', head: 'savedReportDetailHead', body: 'savedReportDetailBody',
+    emptyMetricsMsg: 'This saved report has no columns selected. Use Edit to add some.',
+  });
+}
+function backToSavedReportsList(){
+  renderSavedReportsList();
+}
+function deleteSavedReportFromList(id){
+  saveSavedReportsList(loadSavedReports().filter(r => r.id !== id));
+  if(savedReportDetailId === id) backToSavedReportsList();
+  else renderSavedReportsList();
+}
+// The only path that reveals the selection controls for a saved report:
+// jumps to Build Report pre-loaded with its exact config, and marks it as
+// the save target so the Save button updates it instead of creating a copy.
+function editSavedReport(){
+  if(!savedReportDetailId) return;
+  const report = loadSavedReports().find(r => r.id === savedReportDetailId);
+  if(!report) return;
+  editingSavedReportId = report.id;
+  applyReportConfig(report.config);
+  openReportsSubtab('build');
+}
+function downloadSavedReportPdf(){
+  window.print();
+}
+function downloadSavedReportCsv(){
+  if(!savedReportDetailCurrent || !savedReportDetailCurrent.rows.length) return;
+  const csv = toCsv(savedReportDetailCurrent.headers, savedReportDetailCurrent.rows);
+  downloadCsv('rings-and-i-saved-report-'+(savedReportDetailId||'report')+'.csv', csv);
+}
+function openSaveReportModal(){
+  const editing = editingSavedReportId ? loadSavedReports().find(r => r.id === editingSavedReportId) : null;
+  document.getElementById('saveReportNameInput').value = editing ? editing.name : '';
+  document.getElementById('saveReportModalTitle').textContent = editing ? 'Save changes' : 'Save report';
+  document.getElementById('saveReportModalDesc').textContent = editing
+    ? 'Updates "'+editing.name+'" with the current breakdown, group by, filters and columns.'
+    : 'Saves the current breakdown, group by, filters and columns under a name. Only visible to this PIN, and stays saved across logins.';
+  document.getElementById('saveReportSaveBtn').textContent = editing ? 'Save changes' : 'Save';
+  document.getElementById('saveAsNewReportBtn').style.display = editing ? '' : 'none';
+  document.getElementById('saveReportModal').classList.add('show');
+}
+function closeSaveReportModal(){
+  document.getElementById('saveReportModal').classList.remove('show');
+}
+// asNew=true always creates a fresh saved report (used by the "Save as new"
+// button while editing an existing one); otherwise, if currently editing a
+// saved report, this updates it in place instead of creating a duplicate.
+function saveCurrentReport(asNew){
+  const nameInput = document.getElementById('saveReportNameInput');
+  const name = nameInput.value.trim();
+  if(!name) return;
+  const list = loadSavedReports();
+  if(editingSavedReportId && !asNew){
+    const idx = list.findIndex(r => r.id === editingSavedReportId);
+    if(idx !== -1){
+      list[idx] = Object.assign({}, list[idx], {name, config: captureCurrentReportConfig(), savedAt: new Date().toISOString()});
+      saveSavedReportsList(list);
+      closeSaveReportModal();
+      return;
+    }
+  }
+  const report = {
+    id: 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+    name, config: captureCurrentReportConfig(), savedAt: new Date().toISOString(),
+  };
+  list.push(report);
+  saveSavedReportsList(list);
+  editingSavedReportId = null;
+  closeSaveReportModal();
 }
 
 /* ---------- Tabs, theme, mobile ---------- */
@@ -4029,6 +4303,10 @@ function showTab(name){
   if(subgroup) subgroup.classList.toggle('open', name === 'creatives');
   const chevron = document.getElementById('creativesNavChevron');
   if(chevron) chevron.classList.toggle('rotated', name === 'creatives');
+  const reportsSubgroup = document.getElementById('reportsNavSubgroup');
+  if(reportsSubgroup) reportsSubgroup.classList.toggle('open', name === 'reports');
+  const reportsChevron = document.getElementById('reportsNavChevron');
+  if(reportsChevron) reportsChevron.classList.toggle('rotated', name === 'reports');
   closeMobileMenu();
   if(name === 'creatives') renderCreativeTab();
   if(name === 'forecast') renderForecastTab();
@@ -4036,7 +4314,6 @@ function showTab(name){
   if(name === 'actions') renderActionItemsTab();
   if(name === 'finance') renderFinanceTab();
   if(name === 'notifications') renderNotificationsTab();
-  if(name === 'reports') onReportDimensionChange();
 }
 // Sidebar "Creative performance" dropdown: navigates to the creatives tab (if
 // not already there) and switches straight to the requested subtab.
@@ -4069,7 +4346,10 @@ function rerender(){
   if(document.getElementById('tab-forecast').classList.contains('active')) renderForecastTab();
   if(document.getElementById('tab-finance').classList.contains('active')) renderFinanceTab();
   if(document.getElementById('tab-notifications').classList.contains('active')) renderNotificationsTab();
-  if(document.getElementById('tab-reports').classList.contains('active')) renderReportsTab();
+  if(document.getElementById('tab-reports').classList.contains('active')){
+    if(document.getElementById('reportsSubtab-build').classList.contains('active')) renderReportsTab();
+    if(document.getElementById('reportsSubtab-saved').classList.contains('active') && savedReportDetailId) openSavedReportDetail(savedReportDetailId);
+  }
 }
 
 function fmtLongDate(iso){
