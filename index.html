@@ -818,7 +818,7 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
             </div>
           </div>
           <div class="table-scroll"><table><thead><tr>
-            <th>Region</th><th class="num">Spend</th><th class="num">Cost / Visit</th><th class="num">Cost / Conversion</th><th class="num">Conversions</th>
+            <th>Region</th><th class="num">Spend</th><th class="num">Cost / Visit</th><th class="num">CAC</th><th class="num">Conversions</th>
           </tr></thead><tbody id="financeRegionBody"></tbody></table></div>
         </div>
         <div class="panel">
@@ -1031,8 +1031,13 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
 const TAB_ORDER = ['overview','goal','stores','meta','daily','forecast','actions','notifications','finance','reports'];
 const ACCESS_PINS = {
   "9261": "all",
-  "8352": "all",
-  "0301": ["meta","daily","reports"],
+  // 8352 is the marketing team's login: every tab except Finance. It also
+  // sees a value-level restriction (not a tab-level one) on the commercial
+  // side of the business — see MASKED_METRIC_KEYS_8352 below, which hides
+  // Revenue/Conversions/AOV/ROAS/CAC wherever they'd otherwise appear
+  // (KPI cards, tables, charts, notifications, the chat assistant, Reports).
+  "8352": ['overview','goal','stores','meta','daily','forecast','actions','notifications','reports'],
+  "0301": ["meta","daily","goal","reports"],
   "3614": ["finance"]
 };
 function currentAllowedTabs(){
@@ -1111,15 +1116,32 @@ document.addEventListener('click', () => document.querySelectorAll('.info-icon.o
 
 /* ---------- Formatting ---------- */
 function fmtCurrency(n){ if(n===null||n===undefined||isNaN(n)) return '—'; return '₹' + Math.round(n).toLocaleString('en-IN'); }
-// Money figures are masked for the PIN 0301 login (Meta/Creative/Daily access), which is
-// allowed to see performance metrics but not raw spend or cost figures. Every other PIN sees
-// real numbers. The mask is a solid block of '#' the same length as the formatted number
-// (including its comma separators), e.g. 10,000 -> ######, so the redaction still hints at
-// scale without revealing the actual figure.
-const MASKED_METRIC_KEYS = ['spend','cost_per_walkin','cost_per_conversion',
+// Money figures are masked per PIN. PIN 0301 (Meta/Creative/Daily/Goal/Reports access) is
+// allowed to see performance metrics but not raw spend, cost or count figures. PIN 8352
+// (marketing team, full tab access except Finance) sees spend/counts/performance metrics but
+// not the commercial/revenue side of the business (Revenue, Conversions, AOV, ROAS, CAC).
+// Every other PIN sees real numbers. The mask is a solid block of '#' the same length as the
+// formatted number (including its comma separators), e.g. 10,000 -> ######, so the redaction
+// still hints at scale without revealing the actual figure.
+const MASKED_METRIC_KEYS_0301 = ['spend','cost_per_walkin','cost_per_conversion',
   'conversions','total_visits','total_first_visits','first_visits','website_visitors',
   'appointments_booked','appointments_scheduled','walkins','direct_walkins','meta_appointments',
   'revenue'];
+const MASKED_METRIC_KEYS_8352 = ['revenue','conversions','aov','roas','cost_per_conversion'];
+// Returns the masked-key list for the currently logged in PIN, or null if that PIN sees
+// everything unmasked. Every masking decision in the dashboard (values, deltas, charts,
+// notifications, the chat assistant) should route through this single function so a PIN's
+// restrictions stay consistent everywhere instead of being re-decided ad hoc per feature.
+function activeMaskedKeys(){
+  const pin = sessionStorage.getItem('gos_pin_key');
+  if(pin === '0301') return MASKED_METRIC_KEYS_0301;
+  if(pin === '8352') return MASKED_METRIC_KEYS_8352;
+  return null;
+}
+function isMetricMasked(key){
+  const keys = activeMaskedKeys();
+  return !!(keys && keys.indexOf(key) !== -1);
+}
 function moneyMaskStr(n){
   if(n===null||n===undefined||isNaN(n)) return '—';
   const digits = Math.round(n).toLocaleString('en-IN');
@@ -1129,15 +1151,21 @@ function numMaskStr(n){
   if(n===null||n===undefined||isNaN(n)) return '—';
   return fmtNum(n).replace(/./g, '#');
 }
+function ratioMaskStr(n){
+  if(n===null||n===undefined||isNaN(n)) return '—';
+  return fmtRatio(n).replace(/./g, '#');
+}
 function fmtCount(n){ return sessionStorage.getItem('gos_pin_key') === '0301' ? numMaskStr(n) : fmtNum(n); }
 function fmtSpend(n){ return sessionStorage.getItem('gos_pin_key') === '0301' ? moneyMaskStr(n) : fmtCurrency(n); }
-// Key-aware currency formatter for the chat assistant, which formats many different metrics
-// (spend, CPM, cost per appointment, cost per conversion, revenue, ...) through the same
-// generic formatVal(val, format) call. Only the specific keys in MASKED_METRIC_KEYS get masked
-// for PIN 0301; everything else (CPM, cost per appointment, etc.) still renders normally.
+// Key-aware formatter used anywhere a metric's format is chosen dynamically (KPI grid, Store
+// performance tables, Goal tab, the chat assistant, Reports, ...). Only the specific keys in
+// the current PIN's masked-key list (see activeMaskedKeys) get masked; every other metric
+// still renders normally for that PIN.
 function fmtMoneyKey(val, key, format){
-  if(sessionStorage.getItem('gos_pin_key') === '0301' && MASKED_METRIC_KEYS.indexOf(key) !== -1){
-    return format === 'currency' ? moneyMaskStr(val) : numMaskStr(val);
+  if(isMetricMasked(key)){
+    if(format === 'currency') return moneyMaskStr(val);
+    if(format === 'ratio') return ratioMaskStr(val);
+    return numMaskStr(val);
   }
   return formatVal(val, format);
 }
@@ -1379,7 +1407,7 @@ const KPI_MARKETING = [
   {key:'conversions', label:'Conversions', format:'num', breakdown:'stores'},
   {key:'revenue', label:'Revenue (Est.)', format:'currency', breakdown:'stores', tip:'Estimated order value from the Ops report, a real store reported figure, not a Meta based estimate.'},
   {key:'cost_per_first_visit', label:'Cost / First Visit', format:'currency', breakdown:'regions', goodDir:'down', tip:'Meta spend ÷ Total First Visits. Lower is better — shown green when it falls vs the prior period.'},
-  {key:'cost_per_conversion', label:'Cost / Conversion', format:'currency', breakdown:'regions', goodDir:'down', tip:'Meta spend ÷ Conversions. Lower is better — shown green when it falls vs the prior period.'},
+  {key:'cost_per_conversion', label:'CAC', format:'currency', breakdown:'regions', goodDir:'down', tip:'Customer Acquisition Cost: Meta spend ÷ Conversions. Lower is better — shown green when it falls vs the prior period.'},
   {key:'win_rate', label:'Win Rate', format:'pct', breakdown:'stores', tip:'Conversions ÷ Total Visits (all visits, not just first visits).'},
   {key:'aov', label:'AOV', format:'currency', breakdown:'stores', tip:'Average Order Value: Revenue ÷ Conversions.'},
   {key:'roas', label:'ROAS', format:'ratio', breakdown:'regions', tip:'Revenue ÷ Meta spend (winning + testing).'},
@@ -1489,9 +1517,15 @@ function renderKpiGrid(containerId, defs){
   const prior = priorRangeFor(state.start, state.end);
   let html = '';
   defs.forEach(def => {
+    const masked = isMetricMasked(def.key);
     const val = getMetricValue(def.key, storeList, regionList, state.start, state.end, 'all');
     let deltaHtml = '';
-    if(compareOn){
+    // A delta % on its own doesn't reveal the exact masked figure, but it's
+    // still a live number about a metric this PIN isn't allowed to see, so
+    // it's suppressed the same as the value itself, consistent with how
+    // every other masked surface in the dashboard behaves (charts, goal
+    // pacing, notifications).
+    if(compareOn && !masked){
       const priorVal = getMetricValue(def.key, storeList, regionList, prior.start, prior.end, 'all');
       if(priorVal !== null && priorVal !== undefined && priorVal !== 0){
         const pct = (val - priorVal) / Math.abs(priorVal) * 100;
@@ -1501,11 +1535,15 @@ function renderKpiGrid(containerId, defs){
         deltaHtml = '<span class="kpi-delta up">New</span>';
       }
     }
-    const plus = def.breakdown !== 'none' ? '<button class="kpi-plus" onclick="openKpiModal(\''+def.key+'\')" title="Store level breakdown">+</button>' : '';
+    // The store/region breakdown modal draws bars scaled to each row's raw
+    // value, which would visually leak relative scale even with the number
+    // itself masked, so the "+" drill-in isn't offered at all for a masked
+    // metric.
+    const plus = (def.breakdown !== 'none' && !masked) ? '<button class="kpi-plus" onclick="openKpiModal(\''+def.key+'\')" title="Store level breakdown">+</button>' : '';
     const freshIcon = OPS_SOURCE_KEYS.has(def.key) ? opsFreshnessIconHtml() : '';
     html += '<div class="kpi-card">'
       + '<div class="kpi-label-row"><span class="kpi-label">'+def.label+'</span>'+plus+'</div>'
-      + '<div class="kpi-value">'+freshIcon+formatVal(val, def.format)+'</div>'
+      + '<div class="kpi-value">'+freshIcon+fmtMoneyKey(val, def.key, def.format)+'</div>'
       + deltaHtml
       + '</div>';
   });
@@ -1516,6 +1554,7 @@ function renderKpiGrid(containerId, defs){
 function openKpiModal(key){
   const def = ALL_KPIS.find(d => d.key === key);
   if(!def) return;
+  if(isMetricMasked(key)) return; // restricted metric, no breakdown available for this PIN
   const modal = document.getElementById('kpiModal');
   document.getElementById('modalTitle').textContent = def.label + ' by store';
   document.getElementById('modalSub').textContent = state.start + ' to ' + state.end;
@@ -1590,13 +1629,19 @@ function renderFunnelChart(){
   const storeList = storesForRegion(state.region);
   const ops = sumOpsRange(storeList, state.start, state.end);
   const web = sumWebsiteRange(state.start, state.end);
-  const steps = [
-    {label:'Website Visitors', val: web.visitors},
-    {label:'Appointments Booked', val: ops.appointments_booked},
-    {label:'Total Visits', val: ops.total_visits},
-    {label:'Conversions', val: ops.conversions},
+  const allSteps = [
+    {key:'website_visitors', label:'Website Visitors', val: web.visitors},
+    {key:'appointments_booked', label:'Appointments Booked', val: ops.appointments_booked},
+    {key:'total_visits', label:'Total Visits', val: ops.total_visits},
+    {key:'conversions', label:'Conversions', val: ops.conversions},
   ];
-  const base = steps[0].val || 1;
+  // A masked funnel stage is dropped entirely rather than shown with a
+  // redacted number — the bar height and % label are both derived directly
+  // from the raw value, so there's no way to draw them without visually
+  // leaking scale even if the printed number itself were hidden.
+  const maskedKeys = activeMaskedKeys();
+  const steps = maskedKeys ? allSteps.filter(s => maskedKeys.indexOf(s.key) === -1) : allSteps;
+  const base = steps[0] ? (steps[0].val || 1) : 1;
   const labels = steps.map(s=>s.label);
   const values = steps.map(s=>s.val);
   const pctLabelsPlugin = {
@@ -1640,8 +1685,8 @@ function renderRegionSnapshot(){
       + '<div class="region-metric"><span>Spend (Winning)</span><b>'+fmtCurrency(spend.spend)+'</b></div>'
       + '<div class="region-metric"><span>Appointments Booked</span><b>'+fi+fmtNum(ops.appointments_booked)+'</b></div>'
       + '<div class="region-metric"><span>Total Visits</span><b>'+fi+fmtNum(ops.total_visits)+'</b></div>'
-      + '<div class="region-metric"><span>Conversions</span><b>'+fi+fmtNum(ops.conversions)+'</b></div>'
-      + '<div class="region-metric"><span>Revenue</span><b>'+fi+fmtCurrency(ops.revenue)+'</b></div>'
+      + '<div class="region-metric"><span>Conversions</span><b>'+fi+fmtMoneyKey(ops.conversions,'conversions','num')+'</b></div>'
+      + '<div class="region-metric"><span>Revenue</span><b>'+fi+fmtMoneyKey(ops.revenue,'revenue','currency')+'</b></div>'
       + '<div class="region-metric"><span>Cost / First Visit</span><b>'+fi+fmtCurrency(cpfv)+'</b></div>'
       + '</div>';
   });
@@ -1650,7 +1695,10 @@ function renderRegionSnapshot(){
 function storesLabelForRegion(region){ return storesForRegion(region).map(s => DATA.stores[s].label).join(' + '); }
 
 /* ---------- Store performance tab (with compare-to-prior) ---------- */
-function deltaSub(val, priorVal, goodDir){
+function deltaSub(val, priorVal, goodDir, masked){
+  // A % change is still a live signal about a metric this PIN isn't allowed
+  // to see, so it's suppressed right alongside the value itself.
+  if(masked) return '';
   if(state.compare !== 'prior') return '';
   if(priorVal === null || priorVal === undefined || priorVal === 0) return '';
   const pct = (val-priorVal)/Math.abs(priorVal)*100;
@@ -1660,6 +1708,8 @@ function deltaSub(val, priorVal, goodDir){
 function renderRegionTable(){
   const tbody = document.getElementById('regionTableBody');
   const prior = priorRangeFor(state.start, state.end);
+  const conversionsMasked = isMetricMasked('conversions');
+  const revenueMasked = isMetricMasked('revenue');
   let html = '';
   const regions = ['pune','mumbai','virtual'];
   let totalOps = zeroObj(OPS_KEYS); totalOps.repeat_visits = 0;
@@ -1686,8 +1736,8 @@ function renderRegionTable(){
       + '<td class="num">'+fmtNum(ops.total_visits)+deltaSub(ops.total_visits,opsPrior.total_visits)+'</td>'
       + '<td class="num">'+fmtNum(ops.total_first_visits)+deltaSub(ops.total_first_visits,opsPrior.total_first_visits)+'</td>'
       + '<td class="num">'+fmtNum(ops.repeat_visits)+deltaSub(ops.repeat_visits,opsPrior.repeat_visits)+'</td>'
-      + '<td class="num">'+fmtNum(ops.conversions)+deltaSub(ops.conversions,opsPrior.conversions)+'</td>'
-      + '<td class="num">'+fmtCurrency(ops.revenue)+deltaSub(ops.revenue,opsPrior.revenue)+'</td>'
+      + '<td class="num">'+fmtMoneyKey(ops.conversions,'conversions','num')+deltaSub(ops.conversions,opsPrior.conversions,undefined,conversionsMasked)+'</td>'
+      + '<td class="num">'+fmtMoneyKey(ops.revenue,'revenue','currency')+deltaSub(ops.revenue,opsPrior.revenue,undefined,revenueMasked)+'</td>'
       + '<td class="num">'+fmtCurrency(cpfv)+deltaSub(cpfv,cpfvPrior,'down')+'</td>'
       + '</tr>';
   });
@@ -1704,8 +1754,8 @@ function renderRegionTable(){
     + '<td class="num">'+fmtNum(totalOps.total_visits)+deltaSub(totalOps.total_visits,totalOpsPrior.total_visits)+'</td>'
     + '<td class="num">'+fmtNum(totalOps.total_first_visits)+deltaSub(totalOps.total_first_visits,totalOpsPrior.total_first_visits)+'</td>'
     + '<td class="num">'+fmtNum(totalOps.repeat_visits)+deltaSub(totalOps.repeat_visits,totalOpsPrior.repeat_visits)+'</td>'
-    + '<td class="num">'+fmtNum(totalOps.conversions)+deltaSub(totalOps.conversions,totalOpsPrior.conversions)+'</td>'
-    + '<td class="num">'+fmtCurrency(totalOps.revenue)+deltaSub(totalOps.revenue,totalOpsPrior.revenue)+'</td>'
+    + '<td class="num">'+fmtMoneyKey(totalOps.conversions,'conversions','num')+deltaSub(totalOps.conversions,totalOpsPrior.conversions,undefined,conversionsMasked)+'</td>'
+    + '<td class="num">'+fmtMoneyKey(totalOps.revenue,'revenue','currency')+deltaSub(totalOps.revenue,totalOpsPrior.revenue,undefined,revenueMasked)+'</td>'
     + '<td class="num">'+fmtCurrency(totCpfv)+deltaSub(totCpfv,totCpfvPrior,'down')+'</td>'
     + '</tr>';
   tbody.innerHTML = html;
@@ -1713,6 +1763,8 @@ function renderRegionTable(){
 function renderStoreTable(){
   const tbody = document.getElementById('storeTableBody');
   const prior = priorRangeFor(state.start, state.end);
+  const conversionsMasked = isMetricMasked('conversions');
+  const revenueMasked = isMetricMasked('revenue');
   let html = '';
   STORE_ORDER.forEach(store => {
     const ops = sumOpsRange([store], state.start, state.end);
@@ -1728,8 +1780,8 @@ function renderStoreTable(){
       + '<td class="num">'+fmtNum(ops.total_visits)+deltaSub(ops.total_visits,opsPrior.total_visits)+'</td>'
       + '<td class="num">'+fmtNum(ops.total_first_visits)+deltaSub(ops.total_first_visits,opsPrior.total_first_visits)+'</td>'
       + '<td class="num">'+fmtNum(ops.repeat_visits)+deltaSub(ops.repeat_visits,opsPrior.repeat_visits)+'</td>'
-      + '<td class="num">'+fmtNum(ops.conversions)+deltaSub(ops.conversions,opsPrior.conversions)+'</td>'
-      + '<td class="num">'+fmtCurrency(ops.revenue)+deltaSub(ops.revenue,opsPrior.revenue)+'</td>'
+      + '<td class="num">'+fmtMoneyKey(ops.conversions,'conversions','num')+deltaSub(ops.conversions,opsPrior.conversions,undefined,conversionsMasked)+'</td>'
+      + '<td class="num">'+fmtMoneyKey(ops.revenue,'revenue','currency')+deltaSub(ops.revenue,opsPrior.revenue,undefined,revenueMasked)+'</td>'
       + '</tr>';
   });
   tbody.innerHTML = html;
@@ -1797,7 +1849,7 @@ function downloadFinanceExcel(){
   const storeRows = financeStoreRows().map(r => [DATA.stores[r.store].label, r.revenue.toFixed(2), r.total_visits, r.total_first_visits, r.aov===null?'':r.aov.toFixed(2)]);
   const lines = [];
   lines.push('Finance by region ('+state.start+' to '+state.end+')');
-  lines.push(toCsv(['Region','Spend','Cost / Visit','Cost / Conversion','Conversions'], regionRows));
+  lines.push(toCsv(['Region','Spend','Cost / Visit','CAC','Conversions'], regionRows));
   lines.push('');
   lines.push('Finance by store ('+state.start+' to '+state.end+')');
   lines.push(toCsv(['Store','Total Revenue','Total Visits','Total First Visits','AOV'], storeRows));
@@ -2232,9 +2284,10 @@ function dualSparklineSvg(seriesA, seriesB, colorA, colorB, w, h){
     + lineFor(seriesB, colorB)
     + '</svg>';
 }
-// CTR isn't in MASKED_METRIC_KEYS, so unlike a Spend/Appointments chart this
-// is safe to show under every PIN, including 0301. (Kept for reference /
-// tests; the card itself now shows the initials banner below instead.)
+// CTR isn't in any PIN's masked-key list, so unlike a Spend/Appointments
+// chart this is safe to show under every PIN, including 0301. (Kept for
+// reference / tests; the card itself now shows the initials banner below
+// instead.)
 function creativeSparklineBlock(id, refDate){
   const trend = creativeCtrLast7(id, refDate);
   return '<div class="creative-sparkline">'
@@ -2412,10 +2465,10 @@ const DAILY_TO_GOAL_KEY = {
 // day's month) before comparing, the same pacing logic the Goal tab itself
 // uses for "Goal to date".
 function goalPaceClass(dailyKey, value, dateStr){
-  // Never colour a field that's currently masked (PIN 0301) — a red/green
-  // hint would leak whether the hidden number is above or below goal even
-  // though the figure itself is redacted.
-  if(sessionStorage.getItem('gos_pin_key') === '0301' && MASKED_METRIC_KEYS.indexOf(dailyKey) !== -1) return null;
+  // Never colour a field that's currently masked for the logged in PIN — a
+  // red/green hint would leak whether the hidden number is above or below
+  // goal even though the figure itself is redacted.
+  if(isMetricMasked(dailyKey)) return null;
   const goalKey = DAILY_TO_GOAL_KEY[dailyKey];
   if(!goalKey) return null;
   const gm = GOAL_METRICS.find(m => m.key === goalKey);
@@ -2449,7 +2502,7 @@ function goalPaceSpan(dailyKey, value, dateStr, text){
 //   - 50%-100% of the daily pace -> green (healthy, under budget)
 //   - below 50% of the daily pace -> red (spending too little to be on pace)
 function spendGoalPaceClass(value, dateStr){
-  if(sessionStorage.getItem('gos_pin_key') === '0301') return null;
+  if(isMetricMasked('spend')) return null;
   const goals = loadGoals();
   const monthlyTarget = goals.spend;
   if(!monthlyTarget || value === null || value === undefined) return null;
@@ -2476,8 +2529,7 @@ function renderDailyTab(){
   DAILY_METRICS.forEach(m => {
     const val = cur[m.key], priorVal = pri[m.key];
     const change = (priorVal !== null && priorVal !== undefined && priorVal !== 0) ? (val-priorVal)/Math.abs(priorVal)*100 : null;
-    const fmtFn = (m.key === 'spend' || m.key === 'cost_per_walkin') ? fmtSpend
-      : (MASKED_METRIC_KEYS.indexOf(m.key) !== -1 ? fmtCount : v => formatVal(v, m.format));
+    const fmtFn = v => fmtMoneyKey(v, m.key, m.format);
     const rowFreshIcon = m.key === 'appointments_booked' && OPS_SOURCE_KEYS.has(m.key) ? opsFreshnessIconHtml() : '';
     html += '<tr><td>'+rowFreshIcon+m.label+'</td><td class="num">'+fmtFn(val)+'</td><td class="num">'+fmtFn(priorVal)+'</td><td class="num">'+(change===null?'—':fmtDelta(change))+'</td></tr>';
   });
@@ -2501,7 +2553,7 @@ function renderDailyTab(){
       + '<td class="num">'+fmtCount(d.walkins)+'</td>'
       + '<td class="num">'+fmtCount(d.total_visits)+'</td>'
       + '<td class="num">'+goalPaceSpan('first_visits', d.first_visits, date, fmtCount(d.first_visits))+'</td>'
-      + '<td class="num">'+fmtCount(d.conversions)+'</td>'
+      + '<td class="num">'+fmtMoneyKey(d.conversions, 'conversions', 'num')+'</td>'
       + '<td class="num">'+fmtSpend(d.cost_per_walkin)+'</td>'
       + '</tr>';
   });
@@ -3066,6 +3118,11 @@ function buildNotifications(storeList, regionList, periodA, periodB, scopeLabel)
   const scope = {storeList, regionList, label:scopeLabel};
   const items = [];
   NOTIFICATION_METRICS.forEach(nm => {
+    // A restricted metric doesn't surface a notification card at all — a %
+    // change badge plus narrative text would still be a live signal about a
+    // number this PIN isn't allowed to see, so the whole card is skipped
+    // rather than trying to partially redact it.
+    if(isMetricMasked(nm.key)) return;
     const metric = METRIC_DICT.find(d => d.key === nm.key);
     if(!metric) return;
     const valA = getMetricValue(metric.key, storeList, regionList, periodA.start, periodA.end, 'all');
@@ -3248,14 +3305,25 @@ function renderGoalTab(rebuildInputs){
     const target = goals[mt.key] || 0;
     const achieved = goalAchievedValue(mt.key, monthStart, today);
     const mtFreshIcon = OPS_SOURCE_KEYS.has(mt.key) ? opsFreshnessIconHtml() : '';
+    // Monthly Goal and Goal to date are plan/target numbers, not live
+    // performance data, so they stay visible even for a restricted PIN.
+    // Everything derived from the actual achieved figure (Achieved to date,
+    // Variance, Variance %, Projected, Projected vs Goal, and the progress
+    // bar) is masked instead — Variance %, the projection and the progress
+    // bar percentage are all reversible back to the exact achieved value
+    // once you know the (visible) target, so they can't just be left
+    // unmasked the way a standalone ratio like CTR can.
+    const isMasked = isMetricMasked(mt.key);
     if(mt.kind === 'ratio'){
       const variance = achieved - target;
       const varClass = mt.goodDir === 'down' ? (variance <= 0 ? 'good' : 'warn') : (variance >= 0 ? 'good' : 'warn');
+      const achievedText = isMasked ? fmtMoneyKey(achieved, mt.key, mt.format) : formatVal(achieved, mt.format);
+      const varianceText = isMasked ? fmtMoneyKey(variance, mt.key, mt.format) : formatVal(variance, mt.format);
       tableHtml += '<tr><td>'+mt.label+'</td>'
         + '<td class="num">'+(target?formatVal(target,mt.format):'—')+'</td>'
         + '<td class="num">—</td>'
-        + '<td class="num">'+mtFreshIcon+formatVal(achieved,mt.format)+'</td>'
-        + '<td class="num">'+(target?('<span class="badge '+varClass+'">'+(variance>=0?'+':'')+formatVal(variance,mt.format)+'</span>'):'—')+'</td>'
+        + '<td class="num">'+mtFreshIcon+achievedText+'</td>'
+        + '<td class="num">'+(target?('<span class="badge '+(isMasked?'neutral':varClass)+'">'+(isMasked?'':(variance>=0?'+':''))+varianceText+'</span>'):'—')+'</td>'
         + '<td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
       return;
     }
@@ -3267,21 +3335,32 @@ function renderGoalTab(rebuildInputs){
     const neutral = mt.goodDir === 'neutral';
     const varClass = neutral ? 'neutral' : (variance >= 0 ? 'good' : 'warn');
     const projClass = neutral ? 'neutral' : (projVsGoal >= 0 ? 'good' : 'warn');
+    const achievedText = isMasked ? fmtMoneyKey(achieved, mt.key, mt.format) : formatVal(achieved, mt.format);
+    const varianceText = isMasked ? fmtMoneyKey(variance, mt.key, mt.format) : formatVal(variance, mt.format);
+    const variancePctText = isMasked ? '—' : (variancePct===null?'—':fmtDelta(variancePct));
+    const projectedText = isMasked ? fmtMoneyKey(projected, mt.key, mt.format) : formatVal(projected, mt.format);
+    const projVsGoalText = isMasked ? fmtMoneyKey(projVsGoal, mt.key, mt.format) : formatVal(projVsGoal, mt.format);
     tableHtml += '<tr><td>'+mt.label+'</td>'
       + '<td class="num">'+(target?formatVal(target,mt.format):'—')+'</td>'
       + '<td class="num">'+(target?formatVal(goalToDate,mt.format):'—')+'</td>'
-      + '<td class="num">'+mtFreshIcon+formatVal(achieved,mt.format)+'</td>'
-      + '<td class="num">'+(target?('<span class="badge '+varClass+'">'+(variance>=0?'+':'')+formatVal(variance,mt.format)+'</span>'):'—')+'</td>'
-      + '<td class="num">'+(variancePct===null?'—':fmtDelta(variancePct))+'</td>'
-      + '<td class="num">'+(target?formatVal(projected,mt.format):'—')+'</td>'
-      + '<td class="num">'+(target?('<span class="badge '+projClass+'">'+(projVsGoal>=0?'On track, +':'Behind, ')+formatVal(projVsGoal,mt.format)+'</span>'):'—')+'</td>'
+      + '<td class="num">'+mtFreshIcon+achievedText+'</td>'
+      + '<td class="num">'+(target?('<span class="badge '+(isMasked?'neutral':varClass)+'">'+(isMasked?'':(variance>=0?'+':''))+varianceText+'</span>'):'—')+'</td>'
+      + '<td class="num">'+variancePctText+'</td>'
+      + '<td class="num">'+(target?projectedText:'—')+'</td>'
+      + '<td class="num">'+(target?('<span class="badge '+(isMasked?'neutral':projClass)+'">'+(isMasked?'':(projVsGoal>=0?'On track, +':'Behind, '))+projVsGoalText+'</span>'):'—')+'</td>'
       + '</tr>';
     if(target){
-      const pct = Math.min(100, Math.max(0, achieved/target*100));
-      const onPace = achieved >= goalToDate;
-      progressHtml += '<div class="store-bar-row"><div class="store-bar-label">'+mtFreshIcon+mt.label+'</div>'
-        + '<div class="goal-progress-wrap" style="flex:1;"><div class="goal-progress-fill'+(onPace?'':' behind')+'" style="width:'+pct+'%;"></div></div>'
-        + '<div class="store-bar-val">'+pct.toFixed(2)+'% of goal</div></div>';
+      if(isMasked){
+        progressHtml += '<div class="store-bar-row"><div class="store-bar-label">'+mtFreshIcon+mt.label+'</div>'
+          + '<div class="goal-progress-wrap" style="flex:1;"><div class="goal-progress-fill" style="width:0%;opacity:0.25;"></div></div>'
+          + '<div class="store-bar-val">Restricted</div></div>';
+      } else {
+        const pct = Math.min(100, Math.max(0, achieved/target*100));
+        const onPace = achieved >= goalToDate;
+        progressHtml += '<div class="store-bar-row"><div class="store-bar-label">'+mtFreshIcon+mt.label+'</div>'
+          + '<div class="goal-progress-wrap" style="flex:1;"><div class="goal-progress-fill'+(onPace?'':' behind')+'" style="width:'+pct+'%;"></div></div>'
+          + '<div class="store-bar-val">'+pct.toFixed(2)+'% of goal</div></div>';
+      }
     }
   });
   document.getElementById('goalTableBody').innerHTML = tableHtml;
@@ -3291,7 +3370,7 @@ function renderGoalTab(rebuildInputs){
 /* ---------- Report Q&A assistant (rule based, no external calls) ---------- */
 const METRIC_DICT = [
   {aliases:['cost per first visit','cost per first-visit'], key:'cost_per_first_visit', format:'currency', label:'Cost per First Visit'},
-  {aliases:['cost per conversion','cost per sale'], key:'cost_per_conversion', format:'currency', label:'Cost per Conversion'},
+  {aliases:['cost per conversion','cost per sale','cac','customer acquisition cost'], key:'cost_per_conversion', format:'currency', label:'CAC'},
   {aliases:['cost per walkin','cost per walk in'], key:'cost_per_walkin', format:'currency', label:'Cost per Walkin'},
   {aliases:['appointment to visit percentage','appointment to visit rate','appointment to visit','appt to visit rate','appt to visit','show up rate'], key:'appt_to_visit_pct', format:'pct', label:'Appointment → Visit %'},
   {aliases:['appointments booked','appointment booked','bookings','appointments'], key:'appointments_booked', format:'num', label:'Appointments Booked'},
@@ -3672,7 +3751,15 @@ function answerQuestion(raw){
   if(actionsAnswer) return actionsAnswer;
   const metric = matchMetric(q);
   if(!metric){
-    return "I couldn't find a metric in that question. Try: spend, CPM, CTR, impressions, reach, link clicks, appointments booked, appointment to visit rate, walkins, first walkins, total visits, first visits, repeat visits, conversions, revenue, AOV, ROAS, win rate, website visitors, cost per first visit, cost per conversion, or cost per walkin.";
+    return "I couldn't find a metric in that question. Try: spend, CPM, CTR, impressions, reach, link clicks, appointments booked, appointment to visit rate, walkins, first walkins, total visits, first visits, repeat visits, conversions, revenue, AOV, ROAS, win rate, website visitors, cost per first visit, CAC, or cost per walkin.";
+  }
+  // A restricted metric is declined outright rather than answered with the
+  // number masked — several of the diagnosis/breakdown helpers below mix in
+  // supporting figures (e.g. a % change in a related, unmasked metric) that
+  // could still indirectly hint at the hidden number, so the safest and
+  // simplest rule is: this PIN doesn't get an answer about this metric at all.
+  if(isMetricMasked(metric.key)){
+    return metric.label+" isn't available on this login.";
   }
   const regionParsed = parseRegion(q);
   const scope = scopeFromParsedRegion(regionParsed);
@@ -3833,7 +3920,7 @@ const REPORT_METRIC_META = {
   revenue: {label:'Revenue', format:'currency'},
   website_visitors: {label:'Website Visitors', format:'num'},
   cost_per_first_visit: {label:'Cost / First Visit', format:'currency'},
-  cost_per_conversion: {label:'Cost / Conversion', format:'currency'},
+  cost_per_conversion: {label:'CAC', format:'currency'},
   cost_per_walkin: {label:'Cost / Walkin', format:'currency'},
   win_rate: {label:'Win Rate', format:'pct'},
   aov: {label:'AOV', format:'currency'},
@@ -4090,10 +4177,11 @@ function computeReportResult(config){
     title: 'By '+def.label+titleSuffix,
     headers: [def.label].concat(groupBy === 'none' ? [] : [periodLabel]).concat(metricKeys.map(k => REPORT_METRIC_META[k].label)),
     // Routed through the same PIN-aware masking used everywhere else in the
-    // dashboard (fmtMoneyKey checks MASKED_METRIC_KEYS), so a PIN like 0301
-    // that can see Reports doesn't get to see raw spend/revenue/conversion
-    // counts it isn't allowed to see anywhere else — only rates/ratios like
-    // CTR, CPM, cost per appointment stay visible, exactly as elsewhere.
+    // dashboard (fmtMoneyKey checks activeMaskedKeys()), so a restricted PIN
+    // that can see Reports doesn't get to see whatever raw totals it isn't
+    // allowed to see anywhere else — e.g. 0301 doesn't get spend/appointment/
+    // visit counts, 8352 doesn't get revenue/conversions/AOV/ROAS/CAC — only
+    // rates/ratios it's allowed to see stay visible, exactly as elsewhere.
     rows: rows.map(r => [r.label].concat(groupBy === 'none' ? [] : [r.period]).concat(r.values.map((v,i) => fmtMoneyKey(v, metricKeys[i], REPORT_METRIC_META[metricKeys[i]].format)))),
     leadCols, metricKeysCount: metricKeys.length, rowCount: rows.length,
   };
