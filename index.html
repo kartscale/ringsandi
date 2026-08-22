@@ -770,11 +770,7 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
       </div>
       <div class="panel">
         <div class="panel-head"><div><h3>Daily breakdown</h3><p id="dailyRangeSubtitle">Every day in the selected range, most recent first. Spend/reach/impressions/CTR/link clicks are winning campaigns only. Reach is a raw daily sum (not deduplicated the way Meta's monthly blended export is).</p></div></div>
-        <div class="table-scroll"><table><thead><tr>
-          <th>Date</th><th class="num">Winning Spend</th><th class="num">Winning Reach</th><th class="num">Winning Impressions</th><th class="num">Winning Weighted CTR</th><th class="num">Winning Link Clicks</th>
-          <th class="num">Website Visits</th><th class="num">Website &rarr; Appt %</th><th class="num"><span class="ops-fresh-slot"></span>Appointments Booked</th><th class="num">Appointments Scheduled</th><th class="num">Appt &rarr; Visit %</th>
-          <th class="num">Walkins</th><th class="num">Total Visits</th><th class="num">First Visits</th><th class="num">Conversions</th><th class="num">Cost / Walkin</th>
-        </tr></thead><tbody id="dailyNumbersBody"></tbody></table></div>
+        <div class="table-scroll"><table><thead id="dailyNumbersHead"></thead><tbody id="dailyNumbersBody"></tbody></table></div>
       </div>
     </div>
 
@@ -941,7 +937,12 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
         <div class="report-subtab-pane" id="reportsSubtab-saved">
           <div id="savedReportsListView">
             <div class="panel-head">
-              <div><h3>Saved reports</h3><p>Reports saved from the builder. Only visible to this PIN, and stays saved across logins.</p></div>
+              <div><h3>Saved reports</h3><p>Reports saved from the builder, stored in this browser only. Only visible to this PIN, and stays saved across logins as long as you keep reopening this same dashboard file — export a backup below before switching to a newer copy or a different computer.</p></div>
+              <div class="panel-controls no-print">
+                <button type="button" class="chip" onclick="exportSavedReports()">Export saved reports</button>
+                <button type="button" class="chip" onclick="document.getElementById('savedReportsImportInput').click()">Import saved reports</button>
+                <input type="file" id="savedReportsImportInput" accept="application/json" style="display:none;" onchange="importSavedReportsFile(this)">
+              </div>
             </div>
             <div class="table-scroll"><table><thead><tr><th>Name</th><th>Breakdown</th><th>Saved</th><th class="no-print"></th></tr></thead><tbody id="savedReportsListBody"></tbody></table></div>
           </div>
@@ -1128,7 +1129,7 @@ function fmtCurrency(n){ if(n===null||n===undefined||isNaN(n)) return '—'; ret
 // Every other PIN sees real numbers. The mask is a solid block of '#' the same length as the
 // formatted number (including its comma separators), e.g. 10,000 -> ######, so the redaction
 // still hints at scale without revealing the actual figure.
-const MASKED_METRIC_KEYS_0301 = ['spend','cost_per_walkin','cost_per_conversion',
+const MASKED_METRIC_KEYS_0301 = ['spend','spend_winning','spend_testing','cost_per_walkin','cost_per_conversion',
   'conversions','total_visits','total_first_visits','first_visits','website_visitors',
   'appointments_booked','appointments_scheduled','walkins','direct_walkins','meta_appointments',
   'revenue'];
@@ -1192,6 +1193,16 @@ function toCsv(headers, rows){
 }
 function downloadCsv(filename, csvText){
   const blob = new Blob(['﻿' + csvText], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function downloadJson(filename, obj){
+  const blob = new Blob([JSON.stringify(obj, null, 2)], {type:'application/json;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
@@ -2022,40 +2033,45 @@ function buildCreativeDailyIndex(){
     creativeDailyIndex[r.id].push(r);
   });
 }
-// Creative status badges, all gated on last-7-day spend above 2000 (below
-// that, a creative hasn't had enough recent spend for CTR/Hook rate to be a
-// reliable read, so it's left as Steady):
-//  - Kill: last-7-day CTR is below the Goal CTR and Hook rate is below 25%.
-//    This is a hard floor breach on current performance, checked first and
-//    independent of trend direction.
-//  - Kill: CTR or Hook rate is more than 10% below its target (CTR goal /
-//    25% hook rate).
-//  - Monitor: below target on CTR and/or Hook rate, but within 10% of it —
-//    a near miss, not a clear kill.
-// Every creative needs at least ₹2,000 of spend in the last 7 days to be
-// judged at all; below that it's still in a learning phase and neither
-// verdict is reliable yet.
+// Creative status badges are computed from the same CTR/Hook rate/spend
+// figures already shown on the card for whatever date range is currently
+// selected — not a separately-tracked rolling window — so the badge can
+// never disagree with the numbers sitting right next to it. CTR is the only
+// metric allowed to trigger a Kill — Hook rate is a quality signal worth
+// flagging, but a weak opening few seconds on an otherwise-clicking ad isn't
+// reason enough to pull spend, so it gets its own "Poor Hook" flag instead of
+// ever forcing a Kill:
+//  - Learning: less than ₹2,000 of spend in the selected range, so CTR/Hook
+//    rate aren't a reliable read yet — waived once the creative has spent at
+//    least ₹10,000 over its full lifetime, since by then there's plenty of
+//    history to judge it on even if this particular window is thin.
+//  - Kill: CTR is more than 10% below the CTR goal. The only kill trigger —
+//    Hook rate never kills a creative on its own.
+//  - Poor Hook & CTR: CTR is below goal (but within the 10% Kill margin) AND
+//    Hook rate is below its 25% goal, at the same time.
+//  - Poor CTR: CTR is below goal (within the 10% Kill margin), Hook rate is
+//    fine — a near miss, not a clear kill.
+//  - Poor Hook: CTR is at/above goal (no CTR problem at all), but Hook rate
+//    is below its 25% goal. Surfaces the weak-open issue without implying
+//    the ad should be killed.
+//  - Scale: CTR and Hook rate are both at/above goal.
 const HOOK_RATE_GOAL = 25;
-function creativeTrendStatus(id, refDate){
-  const rows = creativeDailyIndex[id] || [];
-  const last7start = addDaysStr(refDate,-6);
-  let lastImpr=0,lastClicks=0,lastViews=0,lastSpend=0;
-  rows.forEach(r => {
-    if(r.date >= last7start && r.date <= refDate){ lastImpr+=r.impressions; lastClicks+=r.link_clicks; lastViews+=r.video_views; lastSpend+=r.spend; }
-  });
-  if(!lastImpr) return 'Steady';
-  if(lastSpend <= 2000) return 'Learning';
-  const ctrLast = lastClicks/lastImpr*100;
-  const hookLast = lastViews/lastImpr*100;
+function creativeTrendStatus(spend, impressions, ctrVal, hookVal, lifetimeSpend){
+  if(!impressions) return 'Steady';
+  if(spend <= 2000 && (lifetimeSpend||0) < 10000) return 'Learning';
   const ctrGoal = loadGoals().ctr;
-  const ctrRatio = ctrGoal ? ctrLast/ctrGoal : (ctrLast > 0 ? 2 : 0);
-  const hookRatio = hookLast/HOOK_RATE_GOAL;
+  const ctrRatio = ctrGoal ? ctrVal/ctrGoal : (ctrVal > 0 ? 2 : 0);
+  const hookRatio = hookVal/HOOK_RATE_GOAL;
   // Tiny epsilon absorbs floating point noise right at the 90%/100% boundaries
   // (e.g. 1.8/2 not landing on exactly 0.9 in binary floating point).
   const EPS = 1e-9;
-  if(ctrRatio >= 1-EPS && hookRatio >= 1-EPS) return 'Scale';
-  if(ctrRatio < 0.9-EPS || hookRatio < 0.9-EPS) return 'Kill';
-  return 'Monitor';
+  if(ctrRatio < 0.9-EPS) return 'Kill';
+  const ctrPoor = ctrRatio < 1-EPS;
+  const hookPoor = hookRatio < 1-EPS;
+  if(ctrPoor && hookPoor) return 'Poor Hook & CTR';
+  if(ctrPoor) return 'Poor CTR';
+  if(hookPoor) return 'Poor Hook';
+  return 'Scale';
 }
 /* ---------- Content Required (Creative performance subtab) ----------
    How much spend a single creative needs before its CTR reading is
@@ -2064,7 +2080,7 @@ function creativeTrendStatus(id, refDate){
    here, not Hook rate, because at this account's CTR goal it's a much rarer
    event than a 25% hook rate, so it needs far more impressions to stabilise.
    The margin of error is fixed at 10% relative, the same threshold already
-   used to draw the Kill/Monitor line in creativeTrendStatus, so this number
+   used to draw the Kill/Poor CTR line in creativeTrendStatus, so this number
    stays consistent with that formula rather than inventing a second
    standard. See margin-of-error-for-a-proportion: n = z^2 * p*(1-p) / moe^2. */
 const CONTENT_REQ_Z = 1.96;
@@ -2119,7 +2135,7 @@ function renderContentRequiredTab(){
 
   document.getElementById('contentReqSummary').innerHTML =
     '<div class="note-box">'
-    + 'Your CTR goal is '+fmtPct(ctrGoal,2)+'. To tell whether a creative is at least 10% below that goal, the same line the Winning/Kill/Monitor formula uses, it needs roughly '+fmtNum(Math.round(imprNeeded))+' impressions before the read is reliable. '
+    + 'Your CTR goal is '+fmtPct(ctrGoal,2)+'. To tell whether a creative is at least 10% below that goal, the same line the Scale/Kill/Poor CTR formula uses, it needs roughly '+fmtNum(Math.round(imprNeeded))+' impressions before the read is reliable. '
     + 'At the blended CPM for this range and region ('+fmtCurrency(blendedCpm)+'), that is about '+(blendedSpendPerCreative?fmtCurrency(blendedSpendPerCreative):'—')+' of spend per creative. '
     + 'Across '+fmtSpend(totalSpend)+' of spend in this range, that supports roughly <b>'+(totalRequired!=null?Math.max(1,Math.round(totalRequired)):'—')+' creatives</b> account wide; you currently have '+totalActive+' active.'
     + '</div>';
@@ -2166,26 +2182,31 @@ function initialsOf(name){
 function getFilteredCreativeRows(){
   const regionList = regionsForFilter(state.region);
   const sums = aggregateCreatives(state.start, state.end);
+  // Lifetime (all-time) spend per creative, used only to decide whether the
+  // ₹10,000+ Learning waiver applies — a creative with plenty of history
+  // shouldn't be stuck reading Learning just because this particular date
+  // filter happens to be narrow.
+  const lifetimeSums = aggregateCreatives(dataMin(), dataMax());
   const statusFilter = document.getElementById('creativeStatusFilter').value;
   const campFilter = document.getElementById('creativeCampaignFilter').value;
   const adsetFilter = document.getElementById('creativeAdsetFilter').value;
   const sortMode = document.getElementById('creativeSort').value;
   const searchBox = document.getElementById('creativeSearchInput');
   const search = searchBox ? searchBox.value.trim().toLowerCase() : '';
-  const refDate = dataMax();
   let rows = DATA.creative_meta.filter(c => regionList.includes(c.region)).map(c => {
     const s = sums[c.id] || {spend:0, impressions:0, link_clicks:0, meta_appointments:0, video_views:0};
     const active = c.last_spend_day === DATA.meta.date_max;
     const lastActivityDay = c.last_spend_day || c.last_day;
     const daysLive = Math.max(1, daysBetween(c.first_day, lastActivityDay));
     const daysSincePaused = active ? 0 : Math.max(0, daysBetween(lastActivityDay, DATA.meta.date_max) - 1);
+    const ctr = s.impressions ? s.link_clicks/s.impressions*100 : 0;
+    const hook = s.impressions ? s.video_views/s.impressions*100 : 0;
+    const lifetimeSpend = lifetimeSums[c.id] ? lifetimeSums[c.id].spend : 0;
     return Object.assign({}, c, s, {
-      active, daysLive, daysSincePaused,
-      ctr: s.impressions ? s.link_clicks/s.impressions*100 : 0,
-      hook: s.impressions ? s.video_views/s.impressions*100 : 0,
+      active, daysLive, daysSincePaused, ctr, hook,
       cpm: s.impressions ? s.spend/s.impressions*1000 : 0,
       cpa: s.meta_appointments ? s.spend/s.meta_appointments : null,
-      status: creativeTrendStatus(c.id, refDate),
+      status: creativeTrendStatus(s.spend, s.impressions, ctr, hook, lifetimeSpend),
     });
   });
   if(statusFilter === 'active') rows = rows.filter(r => r.active);
@@ -2365,7 +2386,7 @@ function renderCreativeTab(){
   const refDate = dataMax();
   const grid = document.getElementById('creativeGrid');
   grid.innerHTML = rows.map(r => {
-    const badge = r.status === 'Scale' ? 'good' : (r.status === 'Kill' ? 'warn' : (r.status === 'Monitor' ? 'amber' : (r.status === 'Learning' ? 'learning' : 'neutral')));
+    const badge = r.status === 'Scale' ? 'good' : (r.status === 'Kill' ? 'warn' : ((r.status === 'Poor CTR' || r.status === 'Poor Hook' || r.status === 'Poor Hook & CTR') ? 'amber' : (r.status === 'Learning' ? 'learning' : 'neutral')));
     const liveLine = r.active ? ('Live since '+r.first_day) : ('Paused '+r.daysSincePaused+'d ago, ran '+r.first_day+' to '+(r.last_spend_day||r.last_day));
     return '<div class="creative-card">'
       + '<label class="creative-select-wrap"><input type="checkbox" class="creative-select-box" '+(creativeSelection.has(r.id)?'checked':'')+' onchange="toggleCreativeSelect('+r.id+', this.checked)"></label>'
@@ -2475,6 +2496,7 @@ function dailyRowMetrics(storeList, regionList, start, end){
   const spend = sumSpendRange(regionList, start, end, 'winning');
   const web = sumWebsiteRange(start, end);
   const ctr = spend.impressions ? spend.link_clicks/spend.impressions*100 : 0;
+  const hook = spend.impressions ? spend.video_views/spend.impressions*100 : 0;
   const appointmentsBooked = appointmentsTotalRange(start, end);
   const appointmentsScheduled = ops.appointments_booked;
   // Website -> Appt % is based on Appointments Booked (the dedicated tracker
@@ -2483,7 +2505,7 @@ function dailyRowMetrics(storeList, regionList, start, end){
   const webToAppt = (web.visitors && appointmentsBooked !== null) ? appointmentsBooked/web.visitors*100 : (appointmentsBooked === null ? null : 0);
   const apv = appointmentsScheduled ? ops.visits_from_appointment/appointmentsScheduled*100 : 0;
   const costPerWalkin = ops.direct_walkins ? spend.spend/ops.direct_walkins : null;
-  return {spend: spend.spend, reach: spend.reach, impressions: spend.impressions, ctr, link_clicks: spend.link_clicks,
+  return {spend: spend.spend, reach: spend.reach, impressions: spend.impressions, ctr, hook, link_clicks: spend.link_clicks,
     website_visitors: web.visitors, web_to_appt: webToAppt, appointments_booked: appointmentsBooked, appointments_scheduled: appointmentsScheduled, appt_to_visit: apv,
     walkins: ops.direct_walkins, total_visits: ops.total_visits, first_visits: ops.total_first_visits, conversions: ops.conversions,
     cost_per_walkin: costPerWalkin};
@@ -2493,6 +2515,7 @@ const DAILY_METRICS = [
   {key:'reach', label:'Winning Reach', format:'num'},
   {key:'impressions', label:'Winning Impressions', format:'num'},
   {key:'ctr', label:'Winning Weighted CTR', format:'pct'},
+  {key:'hook', label:'Winning Weighted Hook Rate', format:'pct'},
   {key:'link_clicks', label:'Winning Link Clicks', format:'num'},
   {key:'website_visitors', label:'Website Visits', format:'num'},
   {key:'web_to_appt', label:'Website → Appt %', format:'pct'},
@@ -2505,6 +2528,39 @@ const DAILY_METRICS = [
   {key:'conversions', label:'Conversions', format:'num'},
   {key:'cost_per_walkin', label:'Cost / Walkin', format:'currency'},
 ];
+// PIN 0301 sees the Daily breakdown / Period totals tables reduced to just
+// the two performance-rate columns (CTR, Hook rate) — every raw
+// spend/count column is removed entirely, not just value-masked, since
+// those columns aren't relevant to what this login is meant to see. Every
+// other PIN sees the full DAILY_METRICS list.
+const DAILY_METRICS_ALLOWED_0301 = ['ctr','hook'];
+function visibleDailyMetrics(){
+  const pin = sessionStorage.getItem('gos_pin_key');
+  if(pin === '0301') return DAILY_METRICS.filter(m => DAILY_METRICS_ALLOWED_0301.indexOf(m.key) !== -1);
+  return DAILY_METRICS;
+}
+// One cell-rendering function per DAILY_METRICS key, reused by both the
+// Period totals table (already metric-list-driven) and the Daily breakdown
+// table (built dynamically below so its header/columns can also shrink for
+// a restricted PIN without the header and body cells drifting out of sync).
+const DAILY_CELL_RENDERERS = {
+  spend: (d,date) => spendGoalPaceSpan(d.spend, date, fmtSpend(d.spend)),
+  reach: (d,date) => goalPaceSpan('reach', d.reach, date, fmtNum(d.reach)),
+  impressions: (d,date) => goalPaceSpan('impressions', d.impressions, date, fmtNum(d.impressions)),
+  ctr: (d,date) => goalPaceSpan('ctr', d.ctr, date, fmtPct(d.ctr,2)),
+  hook: (d,date) => goalPaceSpan('hook', d.hook, date, fmtPct(d.hook,2)),
+  link_clicks: (d,date) => goalPaceSpan('link_clicks', d.link_clicks, date, fmtNum(d.link_clicks)),
+  website_visitors: (d,date) => goalPaceSpan('website_visitors', d.website_visitors, date, fmtCount(d.website_visitors)),
+  web_to_appt: (d,date) => goalPaceSpan('web_to_appt', d.web_to_appt, date, fmtPct(d.web_to_appt)),
+  appointments_booked: (d,date) => goalPaceSpan('appointments_booked', d.appointments_booked, date, fmtCount(d.appointments_booked)),
+  appointments_scheduled: (d,date) => goalPaceSpan('appointments_scheduled', d.appointments_scheduled, date, fmtCount(d.appointments_scheduled)),
+  appt_to_visit: (d,date) => fmtPct(d.appt_to_visit),
+  walkins: (d,date) => fmtCount(d.walkins),
+  total_visits: (d,date) => fmtCount(d.total_visits),
+  first_visits: (d,date) => goalPaceSpan('first_visits', d.first_visits, date, fmtCount(d.first_visits)),
+  conversions: (d,date) => fmtMoneyKey(d.conversions, 'conversions', 'num'),
+  cost_per_walkin: (d,date) => fmtSpend(d.cost_per_walkin),
+};
 // Maps a Daily breakdown column to its matching Goal tab metric, so a single
 // day's number can be judged against your monthly goal. Only columns with a
 // real goal counterpart are included; columns like Walkins, Total Visits,
@@ -2583,8 +2639,9 @@ function renderDailyTab(){
   const prior = priorRangeFor(state.start, state.end);
   const cur = dailyRowMetrics(storeList, regionList, state.start, state.end);
   const pri = dailyRowMetrics(storeList, regionList, prior.start, prior.end);
+  const metrics = visibleDailyMetrics();
   let html = '';
-  DAILY_METRICS.forEach(m => {
+  metrics.forEach(m => {
     const val = cur[m.key], priorVal = pri[m.key];
     const change = (priorVal !== null && priorVal !== undefined && priorVal !== 0) ? (val-priorVal)/Math.abs(priorVal)*100 : null;
     const fmtFn = v => fmtMoneyKey(v, m.key, m.format);
@@ -2593,26 +2650,19 @@ function renderDailyTab(){
   });
   document.getElementById('dailyTotalsBody').innerHTML = html;
 
+  // Header and body of the Daily breakdown table are both built from the
+  // same PIN-filtered metric list, so a restricted login's columns never
+  // drift out of alignment with its headers.
+  document.getElementById('dailyNumbersHead').innerHTML = '<tr><th>Date</th>'
+    + metrics.map(m => '<th class="num">'+(m.key==='appointments_booked'?opsFreshnessIconHtml():'')+m.label+'</th>').join('')
+    + '</tr>';
+
   const dates = dateRangeList(state.start, state.end).slice().reverse();
   let rowsHtml = '';
   dates.forEach(date => {
     const d = dailyRowMetrics(storeList, regionList, date, date);
     rowsHtml += '<tr><td>'+date+'</td>'
-      + '<td class="num">'+spendGoalPaceSpan(d.spend, date, fmtSpend(d.spend))+'</td>'
-      + '<td class="num">'+goalPaceSpan('reach', d.reach, date, fmtNum(d.reach))+'</td>'
-      + '<td class="num">'+goalPaceSpan('impressions', d.impressions, date, fmtNum(d.impressions))+'</td>'
-      + '<td class="num">'+goalPaceSpan('ctr', d.ctr, date, fmtPct(d.ctr,2))+'</td>'
-      + '<td class="num">'+goalPaceSpan('link_clicks', d.link_clicks, date, fmtNum(d.link_clicks))+'</td>'
-      + '<td class="num">'+goalPaceSpan('website_visitors', d.website_visitors, date, fmtCount(d.website_visitors))+'</td>'
-      + '<td class="num">'+goalPaceSpan('web_to_appt', d.web_to_appt, date, fmtPct(d.web_to_appt))+'</td>'
-      + '<td class="num">'+goalPaceSpan('appointments_booked', d.appointments_booked, date, fmtCount(d.appointments_booked))+'</td>'
-      + '<td class="num">'+goalPaceSpan('appointments_scheduled', d.appointments_scheduled, date, fmtCount(d.appointments_scheduled))+'</td>'
-      + '<td class="num">'+fmtPct(d.appt_to_visit)+'</td>'
-      + '<td class="num">'+fmtCount(d.walkins)+'</td>'
-      + '<td class="num">'+fmtCount(d.total_visits)+'</td>'
-      + '<td class="num">'+goalPaceSpan('first_visits', d.first_visits, date, fmtCount(d.first_visits))+'</td>'
-      + '<td class="num">'+fmtMoneyKey(d.conversions, 'conversions', 'num')+'</td>'
-      + '<td class="num">'+fmtSpend(d.cost_per_walkin)+'</td>'
+      + metrics.map(m => '<td class="num">'+DAILY_CELL_RENDERERS[m.key](d, date)+'</td>').join('')
       + '</tr>';
   });
   document.getElementById('dailyNumbersBody').innerHTML = rowsHtml;
@@ -3363,22 +3413,22 @@ function renderGoalTab(rebuildInputs){
     const target = goals[mt.key] || 0;
     const achieved = goalAchievedValue(mt.key, monthStart, today);
     const mtFreshIcon = OPS_SOURCE_KEYS.has(mt.key) ? opsFreshnessIconHtml() : '';
-    // Monthly Goal and Goal to date are plan/target numbers, not live
-    // performance data, so they stay visible even for a restricted PIN.
-    // Everything derived from the actual achieved figure (Achieved to date,
-    // Variance, Variance %, Projected, Projected vs Goal, and the progress
-    // bar) is masked instead — Variance %, the projection and the progress
-    // bar percentage are all reversible back to the exact achieved value
-    // once you know the (visible) target, so they can't just be left
-    // unmasked the way a standalone ratio like CTR can.
+    // Monthly Goal and Goal to date used to stay visible even for a
+    // restricted PIN, on the theory that they're plan/target numbers rather
+    // than live performance data. For PIN 0301 that's no longer the case for
+    // whichever rows are on its masked-key list (Spend among them) — those
+    // two columns are now masked right alongside everything derived from the
+    // achieved figure (Achieved to date, Variance, Variance %, Projected,
+    // Projected vs Goal, and the progress bar).
     const isMasked = isMetricMasked(mt.key);
     if(mt.kind === 'ratio'){
       const variance = achieved - target;
       const varClass = mt.goodDir === 'down' ? (variance <= 0 ? 'good' : 'warn') : (variance >= 0 ? 'good' : 'warn');
+      const targetText = isMasked ? fmtMoneyKey(target, mt.key, mt.format) : formatVal(target, mt.format);
       const achievedText = isMasked ? fmtMoneyKey(achieved, mt.key, mt.format) : formatVal(achieved, mt.format);
       const varianceText = isMasked ? fmtMoneyKey(variance, mt.key, mt.format) : formatVal(variance, mt.format);
       tableHtml += '<tr><td>'+mt.label+'</td>'
-        + '<td class="num">'+(target?formatVal(target,mt.format):'—')+'</td>'
+        + '<td class="num">'+(target?targetText:'—')+'</td>'
         + '<td class="num">—</td>'
         + '<td class="num">'+mtFreshIcon+achievedText+'</td>'
         + '<td class="num">'+(target?('<span class="badge '+(isMasked?'neutral':varClass)+'">'+(isMasked?'':(variance>=0?'+':''))+varianceText+'</span>'):'—')+'</td>'
@@ -3393,14 +3443,16 @@ function renderGoalTab(rebuildInputs){
     const neutral = mt.goodDir === 'neutral';
     const varClass = neutral ? 'neutral' : (variance >= 0 ? 'good' : 'warn');
     const projClass = neutral ? 'neutral' : (projVsGoal >= 0 ? 'good' : 'warn');
+    const targetText = isMasked ? fmtMoneyKey(target, mt.key, mt.format) : formatVal(target, mt.format);
+    const goalToDateText = isMasked ? fmtMoneyKey(goalToDate, mt.key, mt.format) : formatVal(goalToDate, mt.format);
     const achievedText = isMasked ? fmtMoneyKey(achieved, mt.key, mt.format) : formatVal(achieved, mt.format);
     const varianceText = isMasked ? fmtMoneyKey(variance, mt.key, mt.format) : formatVal(variance, mt.format);
     const variancePctText = isMasked ? '—' : (variancePct===null?'—':fmtDelta(variancePct));
     const projectedText = isMasked ? fmtMoneyKey(projected, mt.key, mt.format) : formatVal(projected, mt.format);
     const projVsGoalText = isMasked ? fmtMoneyKey(projVsGoal, mt.key, mt.format) : formatVal(projVsGoal, mt.format);
     tableHtml += '<tr><td>'+mt.label+'</td>'
-      + '<td class="num">'+(target?formatVal(target,mt.format):'—')+'</td>'
-      + '<td class="num">'+(target?formatVal(goalToDate,mt.format):'—')+'</td>'
+      + '<td class="num">'+(target?targetText:'—')+'</td>'
+      + '<td class="num">'+(target?goalToDateText:'—')+'</td>'
       + '<td class="num">'+mtFreshIcon+achievedText+'</td>'
       + '<td class="num">'+(target?('<span class="badge '+(isMasked?'neutral':varClass)+'">'+(isMasked?'':(variance>=0?'+':''))+varianceText+'</span>'):'—')+'</td>'
       + '<td class="num">'+variancePctText+'</td>'
@@ -3948,17 +4000,19 @@ function sendChatMessage(){
 // show spend, since Meta spend is only trackable per region, not per
 // individual store, and a region can contain more than one store.
 const REPORT_DIMENSIONS = {
-  campaign: { label:'Campaign', metrics:['spend','impressions','reach','link_clicks','ctr','cpm','meta_appointments','cost_per_appointment'], hasSubType:true },
-  adset:    { label:'Ad set', metrics:['spend','impressions','reach','link_clicks','ctr','cpm','meta_appointments','cost_per_appointment'], hasSubType:true },
-  creative: { label:'Creative', metrics:['spend','impressions','link_clicks','ctr','hook_rate','meta_appointments','cost_per_appointment'], hasStatus:true, hasSearchFilter:true },
+  campaign: { label:'Campaign', metrics:['spend','spend_winning','spend_testing','impressions','reach','link_clicks','ctr','cpm','meta_appointments','cost_per_appointment'], hasSubType:true },
+  adset:    { label:'Ad set', metrics:['spend','spend_winning','spend_testing','impressions','reach','link_clicks','ctr','cpm','meta_appointments','cost_per_appointment'], hasSubType:true },
+  creative: { label:'Creative', metrics:['spend','spend_winning','spend_testing','impressions','link_clicks','ctr','hook_rate','meta_appointments','cost_per_appointment'], hasStatus:true, hasSearchFilter:true },
   store:    { label:'Store', metrics:['appointments_booked','appt_to_visit_pct','visits_from_appointment','direct_walkins_marketing','direct_walkins_organic','total_visits','total_first_visits','repeat_visits','conversions','revenue','aov','win_rate'], hasStoreFilter:true },
-  region:   { label:'Region', metrics:['spend','impressions','link_clicks','ctr','cpm','meta_appointments','cost_per_appointment','appointments_booked','appt_to_visit_pct','visits_from_appointment','direct_walkins_marketing','direct_walkins_organic','total_visits','total_first_visits','repeat_visits','conversions','revenue','cost_per_first_visit','cost_per_conversion','cost_per_walkin','win_rate','aov','roas'], hasSubType:true, hasRegionFilter:true },
+  region:   { label:'Region', metrics:['spend','spend_winning','spend_testing','impressions','link_clicks','ctr','cpm','meta_appointments','cost_per_appointment','appointments_booked','appt_to_visit_pct','visits_from_appointment','direct_walkins_marketing','direct_walkins_organic','total_visits','total_first_visits','repeat_visits','conversions','revenue','cost_per_first_visit','cost_per_conversion','cost_per_walkin','win_rate','aov','roas'], hasSubType:true, hasRegionFilter:true },
 };
 // Store keys/labels for the Reports builder's Store filter, independent of
 // the top toolbar (which only filters by region, not by individual store).
 const REPORT_STORE_OPTIONS = STORE_ORDER.map(key => ({key, label: DATA.stores[key].label}));
 const REPORT_METRIC_META = {
-  spend: {label:'Spend', format:'currency'},
+  spend: {label:'Total Spend', format:'currency'},
+  spend_winning: {label:'Winning Spend', format:'currency'},
+  spend_testing: {label:'Testing Spend', format:'currency'},
   impressions: {label:'Impressions', format:'num'},
   reach: {label:'Reach', format:'num'},
   link_clicks: {label:'Link Clicks', format:'num'},
@@ -3992,6 +4046,8 @@ const REPORT_METRIC_META = {
 // as columns for that dimension in the first place.
 const REPORT_METRIC_FORMULAS = {
   spend: raw => raw.spend,
+  spend_winning: raw => raw.spend_winning,
+  spend_testing: raw => raw.spend_testing,
   impressions: raw => raw.impressions,
   reach: raw => raw.reach,
   link_clicks: raw => raw.link_clicks,
@@ -4020,7 +4076,13 @@ const REPORT_METRIC_FORMULAS = {
   roas: raw => raw.spend ? raw.revenue/raw.spend : null,
 };
 function reportRawAgg(){
-  return {spend:0, impressions:0, reach:0, link_clicks:0, meta_appointments:0, video_views:0,
+  // spend is the combined (winning + testing) total, tracked regardless of
+  // the report's own subType filter — spend_winning/spend_testing are the
+  // same total split by sub_type, always computed independently of that
+  // filter too, so Total/Winning/Testing Spend can be ticked as three
+  // simultaneous columns on the same row rather than one column that
+  // changes meaning depending on a separate dropdown.
+  return {spend:0, spend_winning:0, spend_testing:0, impressions:0, reach:0, link_clicks:0, meta_appointments:0, video_views:0,
     appointments_booked:0, visits_from_appointment:0, direct_walkins:0, direct_walkins_marketing:0,
     direct_walkins_organic:0, total_visits:0,
     total_first_visits:0, conversions:0, revenue:0, website_visitors:0};
@@ -4080,6 +4142,7 @@ function campaignDayRows(regionList, subType, start, end){
     const raw = map[key].raw;
     raw.spend += r.spend; raw.impressions += r.impressions; raw.reach += r.reach;
     raw.link_clicks += r.link_clicks; raw.meta_appointments += r.meta_appointments;
+    if(r.sub_type === 'winning') raw.spend_winning += r.spend; else if(r.sub_type === 'testing') raw.spend_testing += r.spend;
   });
   return Object.values(map);
 }
@@ -4096,6 +4159,7 @@ function adsetDayRows(regionList, subType, start, end){
     const raw = map[key].raw;
     raw.spend += r.spend; raw.impressions += r.impressions; raw.reach += r.reach;
     raw.link_clicks += r.link_clicks; raw.meta_appointments += r.meta_appointments;
+    if(r.sub_type === 'winning') raw.spend_winning += r.spend; else if(r.sub_type === 'testing') raw.spend_testing += r.spend;
   });
   return Object.values(map);
 }
@@ -4123,6 +4187,11 @@ function creativeDayRows(regionList, statusFilter, start, end, searchMode, searc
     const raw = map[key].raw;
     raw.spend += r.spend; raw.impressions += r.impressions; raw.link_clicks += r.link_clicks;
     raw.meta_appointments += r.meta_appointments; raw.video_views += r.video_views;
+    // A creative's sub_type (winning/testing) is fixed for its whole life —
+    // classified once from its campaign/ad set name — so its entire spend
+    // always lands in exactly one of these two, never split.
+    const creativeSubType = metaById[r.id].sub_type;
+    if(creativeSubType === 'winning') raw.spend_winning += r.spend; else if(creativeSubType === 'testing') raw.spend_testing += r.spend;
   });
   return Object.values(map).filter(d => d.raw.spend > 0 || d.raw.impressions > 0);
 }
@@ -4145,7 +4214,13 @@ function regionDayRows(regionList, regionFilter, subType, start, end){
       const stores = storesForRegion(region);
       const ops = sumOpsRange(stores, date, date);
       const spend = sumSpendRange([region], date, date, subType);
-      rows.push({entity: REGION_LABEL[region], date, raw: Object.assign(reportRawAgg(), {spend:spend.spend, impressions:spend.impressions, link_clicks:spend.link_clicks, meta_appointments:spend.meta_appointments, appointments_booked:ops.appointments_booked, visits_from_appointment:ops.visits_from_appointment, direct_walkins:ops.direct_walkins, direct_walkins_marketing:ops.direct_walkins_marketing, direct_walkins_organic:ops.direct_walkins_organic, total_visits:ops.total_visits, total_first_visits:ops.total_first_visits, conversions:ops.conversions, revenue:ops.revenue})});
+      // Winning/Testing spend are always computed independently of the
+      // report's own subType filter (a region genuinely mixes both, unlike
+      // a single campaign/ad set/creative), so all three spend columns stay
+      // meaningful together regardless of what that filter is set to.
+      const spendWinning = sumSpendRange([region], date, date, 'winning');
+      const spendTesting = sumSpendRange([region], date, date, 'testing');
+      rows.push({entity: REGION_LABEL[region], date, raw: Object.assign(reportRawAgg(), {spend:spend.spend, spend_winning:spendWinning.spend, spend_testing:spendTesting.spend, impressions:spend.impressions, link_clicks:spend.link_clicks, meta_appointments:spend.meta_appointments, appointments_booked:ops.appointments_booked, visits_from_appointment:ops.visits_from_appointment, direct_walkins:ops.direct_walkins, direct_walkins_marketing:ops.direct_walkins_marketing, direct_walkins_organic:ops.direct_walkins_organic, total_visits:ops.total_visits, total_first_visits:ops.total_first_visits, conversions:ops.conversions, revenue:ops.revenue})});
     });
   });
   return rows;
@@ -4307,6 +4382,52 @@ function loadSavedReports(){
   try{ return JSON.parse(localStorage.getItem(savedReportsStorageKey())) || []; }catch(e){ return []; }
 }
 function saveSavedReportsList(list){ localStorage.setItem(savedReportsStorageKey(), JSON.stringify(list)); }
+// Saved reports live in this browser's localStorage, keyed to both the PIN
+// that's logged in and this exact copy of the dashboard file's location on
+// disk. Reopening that same saved file keeps every saved report forever,
+// even after this file's data is refreshed in place — but a brand new copy
+// of the dashboard (different file path, different computer, a cleared
+// browser) starts empty, since none of that ever leaves the browser. Export
+// downloads a small JSON backup of this PIN's saved reports; Import reads
+// one back in, merging by id rather than overwriting so re-importing the
+// same file twice is harmless.
+function exportSavedReports(){
+  const pin = sessionStorage.getItem('gos_pin_key') || 'anon';
+  const list = loadSavedReports();
+  downloadJson('rings-and-i-saved-reports-'+pin+'-'+dataMax()+'.json', {pin, exported: new Date().toISOString(), reports: list});
+}
+// Pure merge step, kept separate from the FileReader plumbing around it so
+// it can be tested directly: takes whatever was parsed out of an imported
+// JSON file (either a bare array of saved reports, or the {reports:[...]}
+// shape exportSavedReports() produces), merges by id into this PIN's
+// existing saved reports (existing ones win on a collision, never
+// overwritten), saves the result, and returns how many were actually added.
+// Returns null if parsed isn't a recognisable saved-reports shape at all.
+function mergeSavedReportsImport(parsed){
+  const incoming = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.reports) ? parsed.reports : null);
+  if(!incoming) return null;
+  const existing = loadSavedReports();
+  const existingIds = new Set(existing.map(r => r.id));
+  let added = 0;
+  incoming.forEach(r => { if(r && r.id && r.name && r.config && !existingIds.has(r.id)){ existing.push(r); existingIds.add(r.id); added++; } });
+  saveSavedReportsList(existing);
+  return added;
+}
+function importSavedReportsFile(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try{ parsed = JSON.parse(reader.result); }catch(e){ alert("That file isn't valid saved-reports JSON."); input.value=''; return; }
+    const added = mergeSavedReportsImport(parsed);
+    if(added === null){ alert("That file isn't valid saved-reports JSON."); input.value=''; return; }
+    renderSavedReportsList();
+    input.value = '';
+    alert(added+' saved report(s) imported. Reports already present (matched by id) were left untouched.');
+  };
+  reader.readAsText(file);
+}
 function captureCurrentReportConfig(){
   return {
     dimension: document.getElementById('reportDimensionSelect').value,
