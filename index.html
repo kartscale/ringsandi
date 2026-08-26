@@ -1133,7 +1133,7 @@ function fmtCurrency(n){ if(n===null||n===undefined||isNaN(n)) return '—'; ret
 // still hints at scale without revealing the actual figure.
 const MASKED_METRIC_KEYS_0301 = ['spend','spend_winning','spend_testing','cost_per_walkin','cost_per_conversion',
   'conversions','total_visits','total_first_visits','first_visits','website_visitors',
-  'appointments_booked','appointments_scheduled','walkins','direct_walkins','meta_appointments',
+  'appointments_booked','appointments_scheduled','appointments_tracker','walkins','direct_walkins','meta_appointments',
   'revenue'];
 const MASKED_METRIC_KEYS_8352 = ['revenue','conversions','aov','roas','cost_per_conversion'];
 // Returns the masked-key list for the currently logged in PIN, or null if that PIN sees
@@ -1376,6 +1376,7 @@ function getMetricValue(key, storeList, regionList, start, end, subTypeFilter){
     case 'impressions': { const s = sumSpendRange(regionList,start,end,subTypeFilter); return s.impressions; }
     case 'meta_appointments': { const s = sumSpendRange(regionList,start,end,subTypeFilter); return s.meta_appointments; }
     case 'website_visitors': { const w = sumWebsiteRange(start,end); return w.visitors; }
+    case 'appointments_tracker': return appointmentsTotalRange(start, end);
     case 'cost_per_first_visit': {
       const s = sumSpendRange(regionList,start,end,subTypeFilter);
       return ops.total_first_visits ? (s.spend/ops.total_first_visits) : null;
@@ -1443,10 +1444,10 @@ const KPI_OVERVIEW = [
   {key:'repeat_visits', label:'Repeat Visits', format:'num', breakdown:'stores', tip:'Total Visits minus Total First Visits.'},
   {key:'direct_walkins_marketing', label:'Direct Walkins (Paid)', format:'num', breakdown:'stores', tip:'Marketing sourced walk ins, no appointment booked.'},
   {key:'direct_walkins_organic', label:'Direct Walkins (Organic)', format:'num', breakdown:'stores', tip:'Organic walk ins, no appointment booked.'},
-  {key:'appointments_booked', label:'Appointments Booked', format:'num', breakdown:'stores', tip:'Appointments booked online for an in store visit (Ops report).'},
-  {key:'appt_to_visit_pct', label:'Appointment → Visit %', format:'pct', breakdown:'stores', tip:'Visits from Appointment ÷ Appointments Booked.'},
+  {key:'appointments_booked', label:'Appointments Scheduled', format:'num', breakdown:'stores', tip:'Appointments scheduled online for an in store visit (Ops report).'},
+  {key:'appt_to_visit_pct', label:'Appointment → Visit %', format:'pct', breakdown:'stores', tip:'Visits from Appointment ÷ Appointments Scheduled.'},
   {key:'visits_from_appointment', label:'Visits from Appointment', format:'num', breakdown:'stores'},
-  {key:'website_visitors', label:'Website Visitors', format:'num', breakdown:'none', tip:'Online store sessions site wide (Shopify analytics), not split by store since discovery happens on one website.'},
+  {key:'appointments_tracker', label:'Appointments Booked', format:'num', breakdown:'none', tip:'Appointments booked, from the dedicated appointments tracker export.'},
   {key:'winning_blended_cpm', label:'Winning Blended CPM', format:'currency', breakdown:'regions', goodDir:'down', tip:'Cost per 1,000 impressions, winning campaigns only, testing budget excluded. Uses Meta’s deduplicated blended report for the full account when available.'},
 ];
 const ALL_KPIS = KPI_OVERVIEW;
@@ -4818,7 +4819,7 @@ function fmtLongDate(iso){
 // number that comes from the Ops report or the appointments tracker gets a
 // small info icon noting how current that particular figure is.
 const OPS_SOURCE_KEYS = new Set([
-  'appointments_booked','appointments_scheduled','appt_to_visit_pct','appt_to_visit','visits_from_appointment',
+  'appointments_booked','appointments_scheduled','appointments_tracker','appt_to_visit_pct','appt_to_visit','visits_from_appointment',
   'direct_walkins','direct_walkins_marketing','direct_walkins_organic','walkins','total_visits','total_first_visits',
   'first_visits','repeat_visits','conversions','revenue','cost_per_first_visit','cost_per_conversion','cost_per_walkin',
   'win_rate','aov','roas','crm_first_walkins','crm_first_appt_to_visit','lp_to_appt','web_to_appt',
