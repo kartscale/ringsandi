@@ -660,7 +660,12 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
     <!-- GOAL -->
     <div class="tab-content" id="tab-goal">
       <div class="panel">
-        <div class="panel-head"><div><h3>Pacing</h3><p id="goalPacingSubtitle"></p></div></div>
+        <div class="panel-head">
+          <div class="panel-head-flex-text"><h3>Pacing</h3><p id="goalPacingSubtitle"></p></div>
+          <div class="panel-controls">
+            <select class="select-input" id="goalMonthSelect" onchange="onGoalMonthChange()"></select>
+          </div>
+        </div>
         <div class="table-scroll"><table><thead><tr><th>Metric</th><th class="num">Monthly Goal</th><th class="num">Goal to date</th><th class="num">Achieved to date</th><th class="num">Variance</th><th class="num">Variance %</th><th class="num">Projected month end</th><th class="num">Projected vs Goal</th></tr></thead><tbody id="goalTableBody"></tbody></table></div>
       </div>
       <div class="panel">
@@ -883,6 +888,7 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
                 <option value="creative">Creative</option>
                 <option value="store">Store</option>
                 <option value="region">Region</option>
+                <option value="goal">Goal</option>
               </select>
             </div>
             <div class="report-builder-field">
@@ -2786,7 +2792,10 @@ function goalPaceClass(dailyKey, value, dateStr){
   if(!goalKey) return null;
   const gm = GOAL_METRICS.find(m => m.key === goalKey);
   if(!gm || gm.goodDir === 'neutral') return null;
-  const goals = loadGoals();
+  // Each day is judged against ITS OWN month's goal, not whatever the
+  // account's current live month happens to be — matters once a Daily
+  // breakdown range spans a month boundary or looks back at a past month.
+  const goals = loadGoals(dateStr.slice(0,7));
   const monthlyTarget = goals[goalKey];
   if(!monthlyTarget) return null;
   let dailyTarget = monthlyTarget;
@@ -2816,7 +2825,8 @@ function goalPaceSpan(dailyKey, value, dateStr, text){
 //   - below 50% of the daily pace -> red (spending too little to be on pace)
 function spendGoalPaceClass(value, dateStr){
   if(isMetricMasked('spend')) return null;
-  const goals = loadGoals();
+  // Same per-day-own-month principle as goalPaceClass above.
+  const goals = loadGoals(dateStr.slice(0,7));
   const monthlyTarget = goals.spend;
   if(!monthlyTarget || value === null || value === undefined) return null;
   const parts = dateStr.split('-').map(Number);
@@ -3511,17 +3521,55 @@ const GOAL_METRICS = [
   {key:'ctr', label:'CTR', format:'pct', kind:'ratio', goodDir:'up'},
   {key:'lp_to_appt', label:'Website \u2192 Appointment %', format:'pct', kind:'ratio', goodDir:'up'},
 ];
-const DEFAULT_GOALS = {
-  spend: 2000000, reach: 4666666, impressions: 21000000, link_clicks: 283784,
-  website_visitors: 193229, appointments_booked: 309, appointments_scheduled: 309, crm_first_appt_to_visit: 170,
-  crm_first_walkins: 316, total_first_visits: 486, cpm: 95.14, ctr: 1.35, lp_to_appt: 0.16,
+// Monthly goals, keyed by "YYYY-MM". Each month's targets are entered by
+// Claude directly into this object when the client provides new numbers
+// (there's no in-app editing UI, see the note above renderGoalTab() below) —
+// a new month's entry never overwrites an earlier one, so a past month's
+// goal stays exactly as it was set, letting the Pacing tab's month selector
+// look back at any prior month's targets alongside that month's real
+// achieved figures, not just the current month's.
+const GOALS_BY_MONTH = {
+  "2026-08": {
+    spend: 2000000, reach: 4666666, impressions: 21000000, link_clicks: 283784,
+    website_visitors: 193229, appointments_booked: 309, appointments_scheduled: 309, crm_first_appt_to_visit: 170,
+    crm_first_walkins: 316, total_first_visits: 486, cpm: 95.14, ctr: 1.35, lp_to_appt: 0.16,
+  },
+  "2026-09": {
+    spend: 2000000, reach: 2857143, impressions: 11428571, link_clicks: 142857,
+    website_visitors: 110880, appointments_booked: 388, appointments_scheduled: 388, crm_first_appt_to_visit: 203,
+    crm_first_walkins: 366, total_first_visits: 579, cpm: 175, ctr: 1.35, lp_to_appt: 0.35,
+  },
 };
-function loadGoals(){
-  let stored = {};
-  try{ stored = JSON.parse(localStorage.getItem('gos_goals')) || {}; }catch(e){ stored = {}; }
-  return Object.assign({}, DEFAULT_GOALS, stored);
+// A month with no explicit entry above (any month before the earliest one
+// set, or a future month past the latest one set) inherits the nearest
+// EARLIER month's goal rather than showing zeroes — targets don't reset to
+// nothing just because nobody's entered next month's numbers yet. The
+// earliest defined month is used as the floor for anything before it.
+function goalsForMonthBase(month){
+  const months = Object.keys(GOALS_BY_MONTH).sort();
+  let base = null;
+  months.forEach(m => { if(m <= month) base = GOALS_BY_MONTH[m]; });
+  return base || GOALS_BY_MONTH[months[0]] || {};
 }
-function saveGoals(g){ localStorage.setItem('gos_goals', JSON.stringify(g)); }
+// month defaults to the account's current live month (dataMax()'s month) —
+// every existing call site that doesn't care about a specific historical
+// month (creative status thresholds, etc.) keeps working unchanged.
+// Per-month overrides can still be layered on top via localStorage (no
+// in-app UI writes there today, kept only so a future editable panel has
+// somewhere to save to without another data-model change).
+function loadGoals(month){
+  month = month || dataMax().slice(0,7);
+  let storedAll = {};
+  try{ storedAll = JSON.parse(localStorage.getItem('gos_goals')) || {}; }catch(e){ storedAll = {}; }
+  const stored = (storedAll && typeof storedAll === 'object') ? (storedAll[month] || {}) : {};
+  return Object.assign({}, goalsForMonthBase(month), stored);
+}
+function saveGoals(month, g){
+  let all = {};
+  try{ all = JSON.parse(localStorage.getItem('gos_goals')) || {}; }catch(e){ all = {}; }
+  all[month] = g;
+  localStorage.setItem('gos_goals', JSON.stringify(all));
+}
 // Reach, Impressions and CPM prefer Meta's own blended (deduplicated) report
 // for the goal month when one has been supplied, since summing daily rows
 // double counts people reached on more than one day within the month. Only
@@ -3575,32 +3623,89 @@ function goalAchievedValue(key, start, end){
     default: return 0;
   }
 }
+// Month picker for the Pacing table: which "YYYY-MM" is currently selected,
+// null means "not chosen yet" (populateGoalMonthSelect() below resolves that
+// to the account's current live month on first render).
+let goalMonth = null;
+function monthLabel(month){
+  const parts = month.split('-').map(Number);
+  return new Date(Date.UTC(parts[0], parts[1]-1, 1)).toLocaleDateString('en-US', {month:'long', year:'numeric', timeZone:'UTC'});
+}
+// The dropdown's DEFAULT selection is the real calendar "now" (the viewer's
+// own clock), not merely whichever month the data happens to have reached —
+// data can lag a day or more behind, but "this month" should still mean the
+// actual current month, showing partial/zero achieved figures for whatever
+// hasn't arrived yet rather than silently defaulting to an already-finished
+// month. Options = every month with an explicit GOALS_BY_MONTH entry, plus
+// today's real month and the account's current live data month (dataMax()'s
+// month), even if nobody's entered a goal for either yet —
+// goalsForMonthBase() already falls back sensibly for that case, so both are
+// always selectable and the dropdown never shows an empty list.
+function currentCalendarMonth(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function populateGoalMonthSelect(){
+  const sel = document.getElementById('goalMonthSelect');
+  if(!sel) return;
+  const realCurrentMonth = currentCalendarMonth();
+  const dataMonth = dataMax().slice(0,7);
+  const months = Object.keys(GOALS_BY_MONTH);
+  [realCurrentMonth, dataMonth].forEach(m => { if(months.indexOf(m) === -1) months.push(m); });
+  months.sort();
+  const prevVal = goalMonth || realCurrentMonth;
+  sel.innerHTML = months.map(m => '<option value="'+m+'">'+monthLabel(m)+'</option>').join('');
+  sel.value = months.indexOf(prevVal) !== -1 ? prevVal : realCurrentMonth;
+  goalMonth = sel.value;
+}
+function onGoalMonthChange(){
+  goalMonth = document.getElementById('goalMonthSelect').value;
+  renderGoalTab();
+}
 // The "Monthly goals" editable input panel was removed from the Goal tab per
-// the user's request — targets now come from whatever is already saved in
-// localStorage (gos_goals) or DEFAULT_GOALS if nothing's been saved, with no
-// in-app way to edit them. loadGoals()/saveGoals()/DEFAULT_GOALS stay, since
+// an earlier request — targets now come from GOALS_BY_MONTH (optionally
+// overridden per month in localStorage's gos_goals), with no in-app way to
+// edit them; Claude enters a new month's numbers directly into
+// GOALS_BY_MONTH when the client provides them. loadGoals()/saveGoals() stay,
 // the Pacing table below still needs a target to calculate against.
 function renderGoalTab(){
-  const goals = loadGoals();
-  const today = dataMax();
-  const parts = today.split('-').map(Number);
-  const y = parts[0], m = parts[1];
-  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const daysElapsed = Number(today.slice(8,10));
-  const monthStart = today.slice(0,7)+'-01';
-  // The "Monthly goals" input panel (and its goalTodayLabel span) was removed
-  // per the user's request — the as-of date is already stated in this
-  // subtitle's "Day X of Y in <month>" lead-in, so nothing else needs it.
-  let subtitle = 'Day '+daysElapsed+' of '+daysInMonth+' in '+today.slice(0,7)+', all stores and regions. All Meta-derived Achieved-to-date figures (Spend, Reach, Impressions, Link Clicks, CPM, CTR) are winning campaigns only, testing budget excluded';
-  const blended = blendedForRange(monthStart);
-  if(blended) subtitle += '. Reach, Impressions and CPM use Meta\'s blended report through '+blended.period_end+' (deduplicated, not summed daily)';
-  if(appointmentsTotalRange(monthStart, today) !== null) subtitle += '. Appointments Booked uses the appointments tracker export, Appointments Scheduled uses the Ops report';
+  populateGoalMonthSelect();
+  const month = goalMonth || dataMax().slice(0,7);
+  const goals = loadGoals(month);
+  const liveToday = dataMax();
+  const parts = month.split('-').map(Number);
+  const y = parts[0], mo = parts[1];
+  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const monthStart = month+'-01';
+  const monthEnd = month+'-'+String(daysInMonth).padStart(2,'0');
+  // The selected month can be the account's current in-progress month (as
+  // before), a past month that's fully elapsed (viewed for its final,
+  // complete numbers — no more pro-rating needed, 100% of days "elapsed"),
+  // or a future month with a goal already entered but no data yet (nothing
+  // achieved, shown as a target-only view rather than pretending 0 progress
+  // against a month that hasn't started).
+  const isFuture = liveToday < monthStart;
+  let today, daysElapsed;
+  if(isFuture){ today = null; daysElapsed = 0; }
+  else if(liveToday > monthEnd){ today = monthEnd; daysElapsed = daysInMonth; }
+  else { today = liveToday; daysElapsed = Number(liveToday.slice(8,10)); }
+  const isPast = !isFuture && today === monthEnd && liveToday > monthEnd;
+
+  let subtitle;
+  if(isFuture){
+    subtitle = monthLabel(month)+' hasn’t started yet (latest data is through '+liveToday+') — showing the target only, all stores and regions.';
+  } else {
+    subtitle = (isPast ? 'Full month, ' : 'Day '+daysElapsed+' of '+daysInMonth+' in ') + month + ', all stores and regions. All Meta-derived Achieved-to-date figures (Spend, Reach, Impressions, Link Clicks, CPM, CTR) are winning campaigns only, testing budget excluded';
+    const blended = blendedForRange(monthStart);
+    if(blended) subtitle += '. Reach, Impressions and CPM use Meta\'s blended report through '+blended.period_end+' (deduplicated, not summed daily)';
+    if(appointmentsTotalRange(monthStart, today) !== null) subtitle += '. Appointments Booked uses the appointments tracker export, Appointments Scheduled uses the Ops report';
+  }
   document.getElementById('goalPacingSubtitle').textContent = subtitle;
   let tableHtml = '';
   let progressHtml = '';
   GOAL_METRICS.forEach(mt => {
     const target = goals[mt.key] || 0;
-    const achieved = goalAchievedValue(mt.key, monthStart, today);
+    const achieved = isFuture ? 0 : goalAchievedValue(mt.key, monthStart, today);
     const mtFreshIcon = OPS_SOURCE_KEYS.has(mt.key) ? opsFreshnessIconHtml() : '';
     // Monthly Goal and Goal to date used to stay visible even for a
     // restricted PIN, on the theory that they're plan/target numbers rather
@@ -4195,6 +4300,12 @@ const REPORT_DIMENSIONS = {
   creative: { label:'Creative', metrics:['spend','spend_winning','spend_testing','impressions','link_clicks','ctr','hook_rate','meta_appointments','cost_per_appointment','live_since','days_live'], hasStatus:true, hasSearchFilter:true },
   store:    { label:'Store', metrics:['appointments_booked','appt_to_visit_pct','visits_from_appointment','direct_walkins_marketing','direct_walkins_organic','total_visits','total_first_visits','repeat_visits','conversions','revenue','aov','win_rate'], hasStoreFilter:true },
   region:   { label:'Region', metrics:['spend','spend_winning','spend_testing','impressions','link_clicks','ctr','cpm','meta_appointments','cost_per_appointment','appointments_booked','appt_to_visit_pct','visits_from_appointment','direct_walkins_marketing','direct_walkins_organic','total_visits','total_first_visits','repeat_visits','conversions','revenue','cost_per_first_visit','cost_per_conversion','cost_per_walkin','win_rate','aov','roas'], hasSubType:true, hasRegionFilter:true },
+  // Every metric tracked on the Goal tab's Pacing table, one row per Goal
+  // Metric (Spend, Reach, Appointments Booked, ...) rather than per campaign/
+  // creative/etc — see computeGoalReportResult() below, which is a dedicated
+  // code path (not the generic day-row pipeline every other dimension here
+  // shares), since a monthly target isn't a per-day-summable raw figure.
+  goal:     { label:'Goal', metrics:['monthly_goal','goal_to_date','achieved_to_date','variance','variance_pct','projected','projected_vs_goal'] },
 };
 // Store keys/labels for the Reports builder's Store filter, independent of
 // the top toolbar (which only filters by region, not by individual store).
@@ -4231,6 +4342,20 @@ const REPORT_METRIC_META = {
   roas: {label:'ROAS', format:'ratio'},
   live_since: {label:'Live Since', format:'date'},
   days_live: {label:'Days Live', format:'num'},
+  // Goal dimension columns: format is intentionally omitted (null) for every
+  // key except variance_pct — unlike every other dimension, a single column
+  // here needs a DIFFERENT format per row (Monthly Goal is currency for the
+  // Spend row but a percentage for the CTR row), so computeGoalReportResult()
+  // formats each value using that row's own GOAL_METRICS format instead of a
+  // fixed per-column one. Only .label from these entries is actually used
+  // (headers, the metrics checklist) — see computeGoalReportResult() below.
+  monthly_goal: {label:'Monthly Goal', format:null},
+  goal_to_date: {label:'Goal to date', format:null},
+  achieved_to_date: {label:'Achieved to date', format:null},
+  variance: {label:'Variance', format:null},
+  variance_pct: {label:'Variance %', format:'pct'},
+  projected: {label:'Projected month end', format:null},
+  projected_vs_goal: {label:'Projected vs Goal', format:null},
 };
 // Every row builder below fills in only the raw fields it actually has, and
 // every formula only reads the raw fields relevant to it, so it's safe for a
@@ -4500,6 +4625,105 @@ function reportRowsForConfig(config){
   else dayRows = regionDayRows(regionList, regionFilter, subType, state.start, state.end);
   return reportMergeRows(dayRows, groupBy);
 }
+// Every calendar month (as "YYYY-MM" strings) from start to end inclusive,
+// used to expand the Goal report dimension into one row per Goal Metric x
+// Month when Group by is Day/Month/Year (each of those buckets to whole
+// months for Goal, since a monthly target has no meaningful daily/yearly
+// shape of its own).
+function goalMonthsInRange(start, end){
+  const months = [];
+  let y = Number(start.slice(0,4)), m = Number(start.slice(5,7));
+  const endY = Number(end.slice(0,4)), endM = Number(end.slice(5,7));
+  while(y < endY || (y === endY && m <= endM)){
+    months.push(y+'-'+String(m).padStart(2,'0'));
+    m++; if(m > 12){ m = 1; y++; }
+  }
+  return months;
+}
+// The exact same pacing math renderGoalTab() uses for one Goal Metric in one
+// month, factored out so the Reports "Goal" dimension shows identical
+// numbers to the Goal tab itself rather than a re-derived approximation.
+function goalPacingRow(mt, month){
+  const goals = loadGoals(month);
+  const liveToday = dataMax();
+  const parts = month.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(parts[0], parts[1], 0)).getUTCDate();
+  const monthStart = month+'-01';
+  const monthEnd = month+'-'+String(daysInMonth).padStart(2,'0');
+  const isFuture = liveToday < monthStart;
+  let today, daysElapsed;
+  if(isFuture){ today = null; daysElapsed = 0; }
+  else if(liveToday > monthEnd){ today = monthEnd; daysElapsed = daysInMonth; }
+  else { today = liveToday; daysElapsed = Number(liveToday.slice(8,10)); }
+  const target = goals[mt.key] || 0;
+  const achieved = isFuture ? 0 : goalAchievedValue(mt.key, monthStart, today);
+  if(mt.kind === 'ratio'){
+    // Ratio metrics (CPM, CTR, Website->Appointment %) have no meaningful
+    // "goal to date"/"projected month end" — the monthly target IS the daily
+    // target, same as the Goal tab's own pacing table treats them.
+    const variance = achieved - target;
+    return {monthly_goal: target, goal_to_date: null, achieved_to_date: achieved, variance, variance_pct: null, projected: null, projected_vs_goal: null};
+  }
+  const goalToDate = target * (daysElapsed/daysInMonth);
+  const variance = achieved - goalToDate;
+  const variancePct = goalToDate ? (variance/goalToDate*100) : null;
+  const projected = daysElapsed ? (achieved/daysElapsed*daysInMonth) : 0;
+  const projVsGoal = projected - target;
+  return {monthly_goal: target, goal_to_date: goalToDate, achieved_to_date: achieved, variance, variance_pct: variancePct, projected, projected_vs_goal: projVsGoal};
+}
+// Goal dimension's own computeReportResult — bypasses reportRowsForConfig/
+// reportMergeRows/REPORT_METRIC_FORMULAS (the generic pipeline every other
+// dimension shares) because a monthly target isn't a per-day raw figure that
+// can be summed the way spend/reach/appointments are. One row per Goal
+// Metric (Spend, Reach, ... same 13 rows as the Goal tab's Pacing table),
+// expanded to one row per Goal Metric x Month when grouped.
+function computeGoalReportResult(config){
+  const def = REPORT_DIMENSIONS.goal;
+  const groupBy = config.groupBy || 'none';
+  const periodLabel = 'Month';
+  const metricKeys = (config.metricKeys||[]).filter(k => def.metrics.includes(k));
+  const months = groupBy === 'none' ? [ (state.start||dataMax()).slice(0,7) ] : goalMonthsInRange(state.start, state.end);
+  const rows = [];
+  GOAL_METRICS.forEach(mt => {
+    months.forEach(month => {
+      const pacing = goalPacingRow(mt, month);
+      rows.push({label: mt.label, key: mt.key, fmt: mt.format, period: monthBucketLabel(month), bucket: month, values: metricKeys.map(k => pacing[k])});
+    });
+  });
+  const sortVal = r => typeof r.values[0] === 'number' ? r.values[0] : 0;
+  if(metricKeys.length){
+    if(groupBy === 'none'){
+      rows.sort((a,b) => sortVal(b) - sortVal(a));
+    } else {
+      const entityTotal = {};
+      rows.forEach(r => { entityTotal[r.label] = (entityTotal[r.label]||0) + sortVal(r); });
+      rows.sort((a,b) => {
+        const byEntity = entityTotal[b.label] - entityTotal[a.label];
+        if(byEntity !== 0) return byEntity;
+        return a.bucket < b.bucket ? 1 : (a.bucket > b.bucket ? -1 : 0);
+      });
+    }
+  }
+  const titleSuffix = groupBy === 'none' ? '' : (', by '+periodLabel);
+  const leadCols = groupBy === 'none' ? 1 : 2;
+  return {
+    title: 'By '+def.label+titleSuffix,
+    headers: [def.label].concat(groupBy === 'none' ? [] : [periodLabel]).concat(metricKeys.map(k => REPORT_METRIC_META[k].label)),
+    // Each row formats using ITS OWN Goal Metric's format (currency for
+    // Spend, percentage for CTR, ...) rather than one fixed format per
+    // column — the one place this dimension can't reuse the generic
+    // per-column-format assumption every other dimension relies on.
+    // variance_pct is always a percentage regardless of the metric's own
+    // format, since it's a percent-of-goal-to-date figure, not the metric
+    // itself. Masking still keys off each row's real underlying metric key
+    // (mt.key, e.g. 'spend'/'appointments_booked'), so PIN restrictions
+    // match exactly what's masked elsewhere in the dashboard.
+    rows: rows.map(r => [r.label].concat(groupBy === 'none' ? [] : [r.period]).concat(
+      r.values.map((v,i) => fmtMoneyKey(v, r.key, metricKeys[i] === 'variance_pct' ? 'pct' : r.fmt))
+    )),
+    leadCols, metricKeysCount: metricKeys.length, rowCount: rows.length,
+  };
+}
 // Computes a full report result (title/headers/rows plus a couple of shape
 // hints used when rendering) from a config object and the toolbar's current
 // date range/region. Pure with respect to the DOM — everything it needs
@@ -4507,6 +4731,11 @@ function reportRowsForConfig(config){
 // for a saved report's read-only view.
 function computeReportResult(config){
   const dim = config.dimension && REPORT_DIMENSIONS[config.dimension] ? config.dimension : 'campaign';
+  // Goal is not a per-day-summable dimension (a monthly target isn't
+  // something you add up across days/campaigns), so it gets its own code
+  // path entirely rather than flowing through reportRowsForConfig/
+  // reportMergeRows/REPORT_METRIC_FORMULAS below — see computeGoalReportResult().
+  if(dim === 'goal') return computeGoalReportResult(config);
   const def = REPORT_DIMENSIONS[dim];
   const groupBy = config.groupBy || 'none';
   const periodLabel = groupBy === 'day' ? 'Date' : groupBy === 'month' ? 'Month' : 'Year';
