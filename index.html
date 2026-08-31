@@ -359,6 +359,21 @@ canvas{max-width:100%;}
 .modal-head p{margin:3px 0 0;font-size:12px;color:var(--ink-faint);}
 .modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink-faint);line-height:1;padding:2px 4px;flex-shrink:0;}
 .modal-close:hover{color:var(--ink);}
+/* Wider variant for content that needs more room than the default 440px
+   modal-box (e.g. the Creatives tab's 7-Day Trend table). Still governed by
+   modal-box's own max-height:82vh/overflow-y:auto and the modal-overlay's
+   20px safe padding + flex centering, so it never runs past the viewport's
+   edges on any screen size — on narrow viewports max-width:100% simply caps
+   it to the overlay's padded width, same as the default modal-box. */
+.modal-box.modal-wide{width:760px;max-width:100%;}
+.creative-trend-table th,.creative-trend-table td{white-space:nowrap;}
+.creative-trend-table td:first-child,.creative-trend-table th:first-child{position:sticky;left:0;background:var(--panel);text-align:left;}
+.creative-trend-btn{width:100%;margin-top:10px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 10px;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
+.creative-trend-btn:hover{border-color:var(--accent);color:var(--accent);}
+@media(max-width:520px){
+  .modal-box.modal-wide{padding:16px 14px;}
+  .modal-box.modal-wide .modal-head p{display:none;}
+}
 .store-bar-row{display:flex;align-items:center;gap:10px;margin:12px 0;}
 .store-bar-label{width:150px;font-size:12.5px;color:var(--ink-soft);flex-shrink:0;}
 .store-bar-wrap{flex:1;background:var(--bg);border-radius:7px;height:26px;position:relative;overflow:hidden;min-width:40px;}
@@ -1010,6 +1025,16 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
           <button type="button" class="chip" onclick="closeSaveReportModal()">Cancel</button>
           <button type="button" class="chip active" id="saveReportSaveBtn" onclick="saveCurrentReport(false)">Save</button>
         </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="creativeTrendModal" onclick="if(event.target===this)closeCreativeTrendModal()">
+      <div class="modal-box modal-wide">
+        <div class="modal-head">
+          <div><h3 id="creativeTrendModalTitle">7-Day Trend</h3><p id="creativeTrendModalSub"></p></div>
+          <button class="modal-close" onclick="closeCreativeTrendModal()">&times;</button>
+        </div>
+        <div class="table-scroll"><table class="creative-trend-table" id="creativeTrendTable"></table></div>
       </div>
     </div>
   </div>
@@ -2494,6 +2519,62 @@ function creativeSparklineBlock(id, refDate){
 function creativeInitialsBanner(color, initials){
   return '<div class="creative-initials-banner" style="background:'+color+';">'+initials+'</div>';
 }
+/* ---------- Creative card 7-Day Trend modal ----------
+   Day-by-day (not cumulative) breakdown of every metric already shown on
+   the creative card, for the last 7 days ending on the account's most
+   recent data day (dataMax()) — same reference point creativeCtrLast7/
+   creativeSparklineBlock already use, so this always matches whatever the
+   sparkline on the card itself is showing, independent of the toolbar's
+   date range. Missing days (no spend/impressions that day) come back as a
+   zeroed row rather than being skipped, so the table always has exactly 7
+   columns. Formatting for every field re-uses the exact same functions the
+   card itself calls (fmtCreativeCardSpend, fmtCurrency, fmtCount), so PIN
+   based masking here always matches the card, no separate masking logic. */
+function creativeDayTrendRows(id, refDate){
+  const rows = creativeDailyIndex[id] || [];
+  const start = addDaysStr(refDate, -6);
+  const byDate = {};
+  rows.forEach(r => { if(r.date >= start && r.date <= refDate) byDate[r.date] = r; });
+  return dateRangeList(start, refDate).map(d => {
+    const r = byDate[d] || {spend:0, impressions:0, link_clicks:0, meta_appointments:0, video_views:0, instagram_profile_visits:0, post_shares:0, post_engagements:0};
+    const ctr = r.impressions ? r.link_clicks/r.impressions*100 : 0;
+    const hook = r.impressions ? r.video_views/r.impressions*100 : 0;
+    const cpm = r.impressions ? r.spend/r.impressions*1000 : 0;
+    const igVisitPct = r.impressions ? (r.instagram_profile_visits||0)/r.impressions*100 : 0;
+    const postEngagementPct = r.impressions ? (r.post_engagements||0)/r.impressions*100 : 0;
+    const cpa = r.meta_appointments ? r.spend/r.meta_appointments : null;
+    return {date: d, spend: r.spend, ctr, hook, cpm, igVisitPct, postEngagementPct, meta_appointments: r.meta_appointments||0, cpa};
+  });
+}
+const CREATIVE_TREND_METRIC_ROWS = [
+  {label: 'Spend', fn: d => fmtCreativeCardSpend(d.spend)},
+  {label: 'CTR', fn: d => d.ctr.toFixed(2)+'%'},
+  {label: 'Hook rate', fn: d => d.hook.toFixed(2)+'%'},
+  {label: 'CPM', fn: d => fmtCurrency(d.cpm)},
+  {label: 'IG Profile Visit', fn: d => d.igVisitPct.toFixed(2)+'%'},
+  {label: 'Post Engagement', fn: d => d.postEngagementPct.toFixed(2)+'%'},
+  {label: 'Meta Appointments', fn: d => fmtCount(d.meta_appointments)},
+  {label: 'Cost / Appt', fn: d => fmtCurrency(d.cpa)},
+];
+function shortTrendDate(d){ return d.slice(5).split('-').reverse().join('/'); }
+function openCreativeTrendModal(id){
+  if(!creativeDailyIndex) buildCreativeDailyIndex();
+  const meta = DATA.creative_meta.find(c => c.id === id);
+  const refDate = dataMax();
+  const days = creativeDayTrendRows(id, refDate);
+  document.getElementById('creativeTrendModalTitle').textContent = meta ? esc(meta.ad_name) : '7-Day Trend';
+  document.getElementById('creativeTrendModalSub').textContent = 'Day by day, '+days[0].date+' to '+days[days.length-1].date;
+  const head = '<thead><tr><th>Metric</th>'+days.map(d => '<th class="num">'+shortTrendDate(d.date)+'</th>').join('')+'</tr></thead>';
+  const body = '<tbody>'+CREATIVE_TREND_METRIC_ROWS.map(m =>
+    '<tr><td>'+m.label+'</td>'+days.map(d => '<td class="num">'+m.fn(d)+'</td>').join('')+'</tr>'
+  ).join('')+'</tbody>';
+  document.getElementById('creativeTrendTable').innerHTML = head+body;
+  document.getElementById('creativeTrendModal').classList.add('show');
+}
+function closeCreativeTrendModal(){
+  document.getElementById('creativeTrendModal').classList.remove('show');
+}
+
 function renderCreativeTab(){
   if(!creativeDailyIndex) buildCreativeDailyIndex();
   const rows = getFilteredCreativeRows();
@@ -2518,7 +2599,9 @@ function renderCreativeTab(){
       + '<div>Post Engagement<b>'+r.postEngagementPct.toFixed(2)+'%</b></div>'
       + '<div>Spend<b>'+fmtCreativeCardSpend(r.spend)+'</b></div>'
       + '<div>Meta Appointments<b>'+fmtCount(r.meta_appointments)+'</b></div>'
-      + '</div></div>';
+      + '</div>'
+      + '<button type="button" class="creative-trend-btn" onclick="openCreativeTrendModal('+r.id+')">7-Day Trend</button>'
+      + '</div>';
   }).join('');
   if(!rows.length) grid.innerHTML = '<p class="impact-note">No creatives match this range/filter combination.</p>';
   document.getElementById('creativeCountLabel').textContent = rows.length + ' creatives for '+state.start+' to '+state.end+', '+REGION_LABEL[state.region];
