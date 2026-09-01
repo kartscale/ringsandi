@@ -328,11 +328,15 @@ canvas{max-width:100%;}
   .toolbar{width:100%; flex-wrap:wrap; gap:8px;}
   .chip-row{flex-wrap:wrap;}
   .select-input{flex:1 1 auto;}
-  /* iOS Safari auto-zooms the page when a form control with font-size under
-     16px is focused, which is a big part of why dropdowns feel jarring and
-     inconsistent on mobile. Bumping to 16px here (desktop keeps 12.5px)
-     avoids that zoom without changing the compact desktop look. */
-  select.select-input, input.select-input[type="date"]{font-size:16px;}
+  /* iOS Safari (and mobile Chrome) auto-zooms the whole page when ANY form
+     control with font-size under 16px is focused, which is why the page
+     used to jump to a zoomed-in view starting at the PIN login screen (its
+     input is 15px) and stay zoomed in afterwards since nothing resets the
+     browser's own zoom level. Bumping every focusable text input/select to
+     16px here (desktop keeps its normal compact sizes) avoids the zoom
+     trigger everywhere it could happen, not just the toolbar dropdowns. */
+  select.select-input, input.select-input[type="date"], input.select-input[type="text"],
+  .login-pin-wrap input, .chat-input-row input{font-size:16px;}
 
   .kpi-grid{gap:8px;}
   /* 2 columns is the largest common divisor of 10 (Marketing) and 4
@@ -388,7 +392,9 @@ canvas{max-width:100%;}
 @media(max-width:520px){
   .modal-box.modal-wide{padding:16px 14px;}
   .modal-box.modal-wide .modal-head p{display:none;}
-  #kpiGridMarketing,#kpiGridSales,#kpiGridCost{grid-template-columns:1fr;}
+  /* Stays at 2 columns even on phones (matches the 860px breakpoint) rather
+     than collapsing further to 1 — the user explicitly wants a 2-column
+     Overview on mobile, not a single stacked column. */
 }
 .store-bar-row{display:flex;align-items:center;gap:10px;margin:12px 0;}
 .store-bar-label{width:150px;font-size:12.5px;color:var(--ink-soft);flex-shrink:0;}
