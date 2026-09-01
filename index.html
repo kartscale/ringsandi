@@ -132,7 +132,16 @@ html[data-theme="dark"] select.select-input{
 
 .kpi-section{margin-bottom:6px;}
 .kpi-section-title{margin:0 0 10px;font-size:14.5px;font-weight:700;color:var(--ink);}
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:20px;}
+/* Each Overview section gets its own fixed column count sized to its own
+   card total, rather than a shared auto responsive column count — so every
+   row within a section is evenly filled edge to edge with same-width cards
+   (10 Marketing cards -> 5 per row x 2 rows, 4 Sales/Cost cards -> 4 per
+   row x 1 row), instead of the column count drifting with viewport width
+   and leaving blank space or uneven card widths on a partial row. */
+.kpi-grid{display:grid;gap:12px;margin-bottom:20px;}
+#kpiGridMarketing{grid-template-columns:repeat(5,1fr);}
+#kpiGridSales{grid-template-columns:repeat(4,1fr);}
+#kpiGridCost{grid-template-columns:repeat(4,1fr);}
 .kpi-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px;box-shadow:var(--shadow);}
 .kpi-label{font-size:11.5px;color:var(--ink-faint);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;display:flex;align-items:center;gap:4px;}
 .kpi-value{font-size:22px;font-weight:700;margin:6px 0 4px;}
@@ -325,7 +334,11 @@ canvas{max-width:100%;}
      avoids that zoom without changing the compact desktop look. */
   select.select-input, input.select-input[type="date"]{font-size:16px;}
 
-  .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px;}
+  .kpi-grid{gap:8px;}
+  /* 2 columns is the largest common divisor of 10 (Marketing) and 4
+     (Sales/Cost) that still fits comfortably at tablet width, so every
+     section's rows stay evenly filled at this breakpoint too. */
+  #kpiGridMarketing,#kpiGridSales,#kpiGridCost{grid-template-columns:repeat(2,1fr);}
   .kpi-card{padding:12px;}
   .kpi-value{font-size:19px;}
 
@@ -375,6 +388,7 @@ canvas{max-width:100%;}
 @media(max-width:520px){
   .modal-box.modal-wide{padding:16px 14px;}
   .modal-box.modal-wide .modal-head p{display:none;}
+  #kpiGridMarketing,#kpiGridSales,#kpiGridCost{grid-template-columns:1fr;}
 }
 .store-bar-row{display:flex;align-items:center;gap:10px;margin:12px 0;}
 .store-bar-label{width:150px;font-size:12.5px;color:var(--ink-soft);flex-shrink:0;}
