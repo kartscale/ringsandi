@@ -130,6 +130,8 @@ html[data-theme="dark"] select.select-input{
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a7acc2' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
+.kpi-section{margin-bottom:6px;}
+.kpi-section-title{margin:0 0 10px;font-size:14.5px;font-weight:700;color:var(--ink);}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:20px;}
 .kpi-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px;box-shadow:var(--shadow);}
 .kpi-label{font-size:11.5px;color:var(--ink-faint);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;display:flex;align-items:center;gap:4px;}
@@ -638,7 +640,18 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
 
     <!-- OVERVIEW -->
     <div class="tab-content active" id="tab-overview">
-      <div class="kpi-grid" id="kpiGridOverview"></div>
+      <div class="kpi-section">
+        <h3 class="kpi-section-title">Marketing Dashboard</h3>
+        <div class="kpi-grid" id="kpiGridMarketing"></div>
+      </div>
+      <div class="kpi-section">
+        <h3 class="kpi-section-title">Sales Dashboard</h3>
+        <div class="kpi-grid" id="kpiGridSales"></div>
+      </div>
+      <div class="kpi-section">
+        <h3 class="kpi-section-title">Cost Analysis</h3>
+        <div class="kpi-grid" id="kpiGridCost"></div>
+      </div>
 
       <div class="grid-2" style="margin-top:14px;">
         <div class="panel">
@@ -1470,30 +1483,37 @@ function getMetricValue(key, storeList, regionList, start, end, subTypeFilter){
 }
 
 /* ---------- KPI definitions ----------
-   Single, unified Overview list (no more separate "Store funnel" /
-   "Marketing & revenue" sections) in the exact left to right order the
-   user asked for. */
-const KPI_OVERVIEW = [
+   The Overview tab is split into three titled sections — Marketing
+   Dashboard, Sales Dashboard, Cost Analysis — each its own ordered list,
+   per the user's explicit ranking. renderKpiGrid() (below) is called once
+   per section with its own container id. ALL_KPIS is the concatenation of
+   all three, used only for key -> def lookups (openKpiModal etc.) that
+   don't care which section a metric lives in. */
+const KPI_MARKETING = [
   {key:'spend', label:'Meta Spend', format:'currency', breakdown:'regions', tip:'Includes winning and testing campaigns. Excludes campaigns that never produced a tracked appointment.'},
-  {key:'conversions', label:'Conversions', format:'num', breakdown:'stores'},
-  {key:'revenue', label:'Revenue (Est.)', format:'currency', breakdown:'stores', tip:'Estimated order value from the Ops report, a real store reported figure, not a Meta based estimate.'},
-  {key:'win_rate', label:'Win Rate', format:'pct', breakdown:'stores', tip:'Conversions ÷ Total Visits (all visits, not just first visits).'},
-  {key:'aov', label:'AOV', format:'currency', breakdown:'stores', tip:'Average Order Value: Revenue ÷ Conversions.'},
-  {key:'roas', label:'ROAS', format:'ratio', breakdown:'regions', tip:'Revenue ÷ Meta spend (winning + testing).'},
-  {key:'cost_per_conversion', label:'CAC', format:'currency', breakdown:'regions', goodDir:'down', tip:'Customer Acquisition Cost: Meta spend ÷ Conversions. Lower is better — shown green when it falls vs the prior period.'},
-  {key:'total_first_visits', label:'Total First Visits', format:'num', breakdown:'stores'},
-  {key:'cost_per_first_visit', label:'Cost / First Visit', format:'currency', breakdown:'regions', goodDir:'down', tip:'Meta spend ÷ Total First Visits. Lower is better — shown green when it falls vs the prior period.'},
-  {key:'total_visits', label:'Total Visits', format:'num', breakdown:'stores'},
+  {key:'total_first_visits', label:'First Visits', format:'num', breakdown:'stores'},
   {key:'repeat_visits', label:'Repeat Visits', format:'num', breakdown:'stores', tip:'Total Visits minus Total First Visits.'},
+  {key:'total_visits', label:'Total Visits', format:'num', breakdown:'stores'},
+  {key:'appointments_tracker', label:'Appointments Booked', format:'num', breakdown:'none', tip:'Appointments booked, from the dedicated appointments tracker export.'},
+  {key:'appointments_booked', label:'Appointments Scheduled', format:'num', breakdown:'stores', tip:'Appointments scheduled online for an in store visit (Ops report).'},
+  {key:'visits_from_appointment', label:'Appointments Visited', format:'num', breakdown:'stores'},
+  {key:'appt_to_visit_pct', label:'Appointment → Visit %', format:'pct', breakdown:'stores', tip:'Visits from Appointment ÷ Appointments Scheduled.'},
   {key:'direct_walkins_marketing', label:'Direct Walkins (Paid)', format:'num', breakdown:'stores', tip:'Marketing sourced walk ins, no appointment booked.'},
   {key:'direct_walkins_organic', label:'Direct Walkins (Organic)', format:'num', breakdown:'stores', tip:'Organic walk ins, no appointment booked.'},
-  {key:'appointments_booked', label:'Appointments Scheduled', format:'num', breakdown:'stores', tip:'Appointments scheduled online for an in store visit (Ops report).'},
-  {key:'appt_to_visit_pct', label:'Appointment → Visit %', format:'pct', breakdown:'stores', tip:'Visits from Appointment ÷ Appointments Scheduled.'},
-  {key:'visits_from_appointment', label:'Visits from Appointment', format:'num', breakdown:'stores'},
-  {key:'appointments_tracker', label:'Appointments Booked', format:'num', breakdown:'none', tip:'Appointments booked, from the dedicated appointments tracker export.'},
+];
+const KPI_SALES = [
+  {key:'win_rate', label:'Win Rate', format:'pct', breakdown:'stores', tip:'Conversions ÷ Total Visits (all visits, not just first visits).'},
+  {key:'conversions', label:'Orders', format:'num', breakdown:'stores'},
+  {key:'aov', label:'AOV', format:'currency', breakdown:'stores', tip:'Average Order Value: Revenue ÷ Conversions.'},
+  {key:'revenue', label:'Revenue Booked', format:'currency', breakdown:'stores', tip:'Estimated order value from the Ops report, a real store reported figure, not a Meta based estimate.'},
+];
+const KPI_COST = [
+  {key:'cost_per_first_visit', label:'Cost of First Visit', format:'currency', breakdown:'regions', goodDir:'down', tip:'Meta spend ÷ Total First Visits. Lower is better — shown green when it falls vs the prior period.'},
+  {key:'roas', label:'ROAS', format:'ratio', breakdown:'regions', tip:'Revenue ÷ Meta spend (winning + testing).'},
+  {key:'cost_per_conversion', label:'CAC', format:'currency', breakdown:'regions', goodDir:'down', tip:'Customer Acquisition Cost: Meta spend ÷ Conversions. Lower is better — shown green when it falls vs the prior period.'},
   {key:'winning_blended_cpm', label:'Winning Blended CPM', format:'currency', breakdown:'regions', goodDir:'down', tip:'Cost per 1,000 impressions, winning campaigns only, testing budget excluded. Uses Meta’s deduplicated blended report for the full account when available.'},
 ];
-const ALL_KPIS = KPI_OVERVIEW;
+const ALL_KPIS = KPI_MARKETING.concat(KPI_SALES, KPI_COST);
 
 function formatVal(val, format){
   if(format === 'currency') return fmtCurrency(val);
@@ -5161,7 +5181,9 @@ function closeMobileMenu(){ document.querySelector('.sidebar').classList.remove(
 /* ---------- Orchestration ---------- */
 function rerender(){
   document.getElementById('rangeSubtitle').textContent = 'Showing '+state.start+' to '+state.end+', '+REGION_LABEL[state.region];
-  renderKpiGrid('kpiGridOverview', KPI_OVERVIEW);
+  renderKpiGrid('kpiGridMarketing', KPI_MARKETING);
+  renderKpiGrid('kpiGridSales', KPI_SALES);
+  renderKpiGrid('kpiGridCost', KPI_COST);
   renderTrendChart();
   renderFunnelChart();
   renderRegionSnapshot();
