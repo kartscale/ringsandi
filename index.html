@@ -280,6 +280,20 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
 .notif-metric{font-size:13.5px;font-weight:700;color:var(--ink);flex:1;}
 .notif-body{font-size:13px;line-height:1.55;color:var(--ink-soft);white-space:pre-line;}
 
+/* ---- Toolbar alert bell (replaces the old, non-functional "Compare to
+   prior period" dropdown — comparisons still always run, see state.compare
+   in extract_app_full.js) ---- */
+.alert-bell-wrap{position:relative;}
+.alert-bell-btn{position:relative;width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit;}
+.alert-bell-btn:hover{background:var(--bg);color:var(--ink);}
+.alert-bell-badge{position:absolute;top:-5px;right:-5px;background:var(--danger-bg);color:var(--danger);border-radius:999px;font-size:10px;font-weight:700;line-height:1;min-width:16px;height:16px;padding:0 4px;display:flex;align-items:center;justify-content:center;}
+.alert-panel{display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:120;width:320px;max-width:88vw;max-height:70vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 48px rgba(23,26,43,0.24);}
+.alert-panel.show{display:block;}
+.alert-panel-head{padding:12px 14px;border-bottom:1px solid var(--line);font-weight:700;font-size:13.5px;color:var(--ink);}
+.alert-panel-body{padding:12px;display:flex;flex-direction:column;gap:10px;}
+.alert-panel-body .notif-card{padding:12px 13px;}
+.alert-empty{padding:6px 4px;color:var(--ink-faint);font-size:12.5px;}
+
 .note-box{background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 30%, var(--panel));border-radius:12px;padding:14px 16px;font-size:13px;color:var(--ink);line-height:1.55;}
 .foot-note{font-size:11.5px;color:var(--ink-faint);margin-top:22px;text-align:center;}
 .foot-note.kartscale-footer{margin-top:4px;letter-spacing:.03em;}
@@ -652,10 +666,16 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
           <input type="date" class="select-input" id="customTo">
           <button class="chip active" style="border-radius:9px;" onclick="applyCustomRange()">Apply</button>
         </span>
-        <select class="select-input" id="compareSelect" onchange="rerender()">
-          <option value="prior">Compare to prior period</option>
-          <option value="none">No comparison</option>
-        </select>
+        <div class="alert-bell-wrap">
+          <button type="button" class="alert-bell-btn" id="alertBellBtn" onclick="toggleAlertPanel()" title="Alerts">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="alert-bell-badge" id="alertBellBadge" style="display:none;">0</span>
+          </button>
+          <div class="alert-panel" id="alertPanel">
+            <div class="alert-panel-head">Alerts</div>
+            <div id="alertPanelBody" class="alert-panel-body"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1999,6 +2019,7 @@ function closeExportMenus(){
 }
 document.addEventListener('click', function(e){
   if(!e.target.closest || !e.target.closest('.export-menu-wrap')) closeExportMenus();
+  if(!e.target.closest || !e.target.closest('.alert-bell-wrap')) closeAlertPanel();
 });
 
 /* ---------- Meta performance tab (date range aware, region + compare) ---------- */
@@ -3522,6 +3543,76 @@ function renderNotificationsTab(){
       + '<div class="notif-body">'+it.narrative+'</div>'
       + '</div>';
   }).join('') + '</div>';
+}
+
+/* ---------- Toolbar alert bell ----------
+   Separate, deliberately minimal from the Notifications tab above (which
+   compares a rolling last-3-days vs prior-3-days across many metrics with
+   sample-size gating). This is a lightweight, always-visible bell in the
+   toolbar for a small number of sharp, single-day threshold checks. Each
+   entry in ALERT_CHECKS is a function that inspects the latest data (scoped
+   to the toolbar's current region filter, like everything else in the
+   toolbar) and returns either an alert object or null — recomputed fresh on
+   every render rather than stored/dismissed, so a day-specific alert
+   naturally stops appearing once that day is no longer "yesterday": no
+   expiry bookkeeping needed, "today" simply checks a new "yesterday" that
+   may or may not also breach the threshold. Add future alert types by
+   pushing another function here. */
+const ALERT_CHECKS = [
+  function spendYesterdayAlert(regionList){
+    // A masked PIN doesn't get to see spend anywhere else in the dashboard,
+    // so it shouldn't leak a live spend swing into a global alert either.
+    if(isMetricMasked('spend')) return null;
+    const y = computeRange('yesterday');
+    const val = sumSpendRange(regionList, y.start, y.end, 'all').spend;
+    const prior = priorRangeFor(y.start, y.end);
+    const priorVal = sumSpendRange(regionList, prior.start, prior.end, 'all').spend;
+    if(!priorVal) return null; // no baseline day to compare against yet
+    const pct = (val - priorVal) / Math.abs(priorVal) * 100;
+    if(!isFinite(pct) || Math.abs(pct) < 20) return null;
+    const up = pct > 0;
+    return {
+      id: 'spend-yesterday-'+y.start,
+      tone: 'warn',
+      title: 'Spend '+(up?'spiked':'dropped')+' yesterday',
+      body: 'Meta spend on '+fmtLongDate(y.start)+' was '+fmtCurrency(val)+', '+(up?'up':'down')+' '+Math.abs(pct).toFixed(1)+'% vs the day before ('+fmtCurrency(priorVal)+').',
+    };
+  },
+];
+function buildAlerts(){
+  const regionList = regionsForFilter(state.region);
+  return ALERT_CHECKS.map(fn => { try { return fn(regionList); } catch(e){ return null; } }).filter(Boolean);
+}
+function renderAlertBell(){
+  const badge = document.getElementById('alertBellBadge');
+  const body = document.getElementById('alertPanelBody');
+  if(!badge || !body) return;
+  const alerts = buildAlerts();
+  if(alerts.length){
+    badge.textContent = String(alerts.length);
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+  if(!alerts.length){
+    body.innerHTML = '<div class="alert-empty">No alerts right now.</div>';
+    return;
+  }
+  body.innerHTML = alerts.map(a =>
+    '<div class="notif-card notif-'+a.tone+'">'
+    + '<div class="notif-head"><span class="notif-arrow notif-'+a.tone+'">!</span><span class="notif-metric">'+esc(a.title)+'</span></div>'
+    + '<div class="notif-body">'+esc(a.body)+'</div>'
+    + '</div>'
+  ).join('');
+}
+function toggleAlertPanel(){
+  const panel = document.getElementById('alertPanel');
+  if(!panel) return;
+  panel.classList.toggle('show');
+}
+function closeAlertPanel(){
+  const panel = document.getElementById('alertPanel');
+  if(panel) panel.classList.remove('show');
 }
 
 function renderActionItemsTab(){
@@ -5215,6 +5306,7 @@ function rerender(){
   renderCampaignTable();
   renderDailyTab();
   renderActionItemsTab();
+  renderAlertBell();
   if(document.getElementById('tab-meta').classList.contains('active')){
     renderCreativeTab();
     if(document.getElementById('metaSubtab-contentreq').classList.contains('active')) renderContentRequiredTab();
