@@ -1619,6 +1619,29 @@ function computeRange(mode){
   return {start: state.start||dataMin(), end: state.end||max};
 }
 function priorRangeFor(start, end){
+  // Month to date is deliberately calendar-month-aware: the "prior period"
+  // is the SAME day-of-month range in the immediately preceding calendar
+  // month (e.g. Sep 1-6 vs Aug 1-6), not a generic n-day backward shift —
+  // a plain shift would land MTD's comparison at the tail end of the
+  // previous month instead (Sep 1-6 minus 6 days -> Aug 26-31), which isn't
+  // actually a comparable period. Every other preset (Yesterday, Last 7/30
+  // Days) anchors at "today" with a fixed window length, where a plain
+  // n-day backward shift already IS the correct "immediately preceding
+  // period" comparison, so only 'mtd' needs this special case.
+  if(state.rangeMode === 'mtd' && start.slice(8,10) === '01'){
+    const [y, m] = start.split('-').map(Number);
+    const endDay = Number(end.slice(8,10));
+    let py = y, pm = m - 1;
+    if(pm < 1){ pm = 12; py--; }
+    const priorStart = py+'-'+String(pm).padStart(2,'0')+'-01';
+    // Clamp to the previous month's actual last day when it's shorter (e.g.
+    // day 31 in the current month has no equivalent in a 30-day or February
+    // prior month).
+    const daysInPriorMonth = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+    const priorEndDay = Math.min(endDay, daysInPriorMonth);
+    const priorEnd = py+'-'+String(pm).padStart(2,'0')+'-'+String(priorEndDay).padStart(2,'0');
+    return {start: priorStart, end: priorEnd};
+  }
   const n = daysBetween(start,end);
   return {start: addDaysStr(start, -n), end: addDaysStr(start, -1)};
 }
@@ -2765,6 +2788,7 @@ function dailyRowMetrics(storeList, regionList, start, end){
   const web = sumWebsiteRange(start, end);
   const ctr = spend.impressions ? spend.link_clicks/spend.impressions*100 : 0;
   const hook = spend.impressions ? spend.video_views/spend.impressions*100 : 0;
+  const cpm = spend.impressions ? spend.spend/spend.impressions*1000 : null;
   const appointmentsBooked = appointmentsTotalRange(start, end);
   const appointmentsScheduled = ops.appointments_booked;
   // Website -> Appt % is based on Appointments Booked (the dedicated tracker
@@ -2773,7 +2797,7 @@ function dailyRowMetrics(storeList, regionList, start, end){
   const webToAppt = (web.visitors && appointmentsBooked !== null) ? appointmentsBooked/web.visitors*100 : (appointmentsBooked === null ? null : 0);
   const apv = appointmentsScheduled ? ops.visits_from_appointment/appointmentsScheduled*100 : 0;
   const costPerWalkin = ops.direct_walkins ? spend.spend/ops.direct_walkins : null;
-  return {spend: spend.spend, reach: spend.reach, impressions: spend.impressions, ctr, hook, link_clicks: spend.link_clicks,
+  return {spend: spend.spend, reach: spend.reach, impressions: spend.impressions, ctr, hook, cpm, link_clicks: spend.link_clicks,
     website_visitors: web.visitors, web_to_appt: webToAppt, appointments_booked: appointmentsBooked, appointments_scheduled: appointmentsScheduled, appt_to_visit: apv,
     walkins: ops.direct_walkins, total_visits: ops.total_visits, first_visits: ops.total_first_visits, conversions: ops.conversions,
     cost_per_walkin: costPerWalkin};
@@ -2782,6 +2806,7 @@ const DAILY_METRICS = [
   {key:'spend', label:'Winning Spend', format:'currency'},
   {key:'reach', label:'Winning Reach', format:'num'},
   {key:'impressions', label:'Winning Impressions', format:'num'},
+  {key:'cpm', label:'Winning CPM', format:'currency'},
   {key:'ctr', label:'Winning Weighted CTR', format:'pct'},
   {key:'hook', label:'Winning Weighted Hook Rate', format:'pct'},
   {key:'link_clicks', label:'Winning Link Clicks', format:'num'},
@@ -2815,6 +2840,7 @@ const DAILY_CELL_RENDERERS = {
   spend: (d,date) => spendGoalPaceSpan(d.spend, date, fmtSpend(d.spend)),
   reach: (d,date) => goalPaceSpan('reach', d.reach, date, fmtNum(d.reach)),
   impressions: (d,date) => goalPaceSpan('impressions', d.impressions, date, fmtNum(d.impressions)),
+  cpm: (d,date) => goalPaceSpan('cpm', d.cpm, date, fmtCurrency(d.cpm)),
   ctr: (d,date) => goalPaceSpan('ctr', d.ctr, date, fmtPct(d.ctr,2)),
   hook: (d,date) => goalPaceSpan('hook', d.hook, date, fmtPct(d.hook,2)),
   link_clicks: (d,date) => goalPaceSpan('link_clicks', d.link_clicks, date, fmtNum(d.link_clicks)),
@@ -2836,7 +2862,7 @@ const DAILY_CELL_RENDERERS = {
 // left uncoloured. Spend is also left uncoloured since its goal direction is
 // "neutral" (there's no good/bad side to spending more or less against plan).
 const DAILY_TO_GOAL_KEY = {
-  reach: 'reach', impressions: 'impressions', ctr: 'ctr', link_clicks: 'link_clicks',
+  reach: 'reach', impressions: 'impressions', cpm: 'cpm', ctr: 'ctr', link_clicks: 'link_clicks',
   website_visitors: 'website_visitors', web_to_appt: 'lp_to_appt',
   appointments_booked: 'appointments_booked', appointments_scheduled: 'appointments_scheduled',
   first_visits: 'total_first_visits',
@@ -2938,7 +2964,7 @@ function renderDailyTab(){
       + '</tr>';
   });
   document.getElementById('dailyNumbersBody').innerHTML = rowsHtml;
-  document.getElementById('dailyRangeSubtitle').textContent = 'Every day from '+state.start+' to '+state.end+', most recent first ('+dates.length+' days). Spend/reach/impressions/CTR/link clicks are winning campaigns only. Appointments Booked uses the appointments tracker export (only available from the day it started); Appointments Scheduled uses the Ops report. Coloured numbers are paced against your monthly goal for that metric (green: on or above goal pace, yellow: within 10% of goal pace, red: more than 10% below).';
+  document.getElementById('dailyRangeSubtitle').textContent = 'Every day from '+state.start+' to '+state.end+', most recent first ('+dates.length+' days). Spend/reach/impressions/CPM/CTR/link clicks are winning campaigns only. Appointments Booked uses the appointments tracker export (only available from the day it started); Appointments Scheduled uses the Ops report. Coloured numbers are paced against your monthly goal for that metric (green: on or above goal pace, yellow: within 10% of goal pace, red: more than 10% below).';
   equalizeGoalPaceWidths('dailyNumbersBody');
 }
 // All the goal-pace tags (across every metric column) are forced to the same
