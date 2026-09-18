@@ -828,6 +828,12 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
           </div>
           <div class="table-scroll"><table><thead id="placementTableHead"></thead><tbody id="placementTableBody"></tbody></table></div>
         </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-head-flex-text"><h3>All placements</h3><p>Every placement side by side for the selected date range, one row each, using the same Winning/Testing/All filter as the table above.</p></div>
+          </div>
+          <div class="table-scroll"><table><thead id="placementAllTableHead"></thead><tbody id="placementAllTableBody"></tbody></table></div>
+        </div>
       </div>
 
       <div class="meta-subtab-pane" id="metaSubtab-contentreq">
@@ -2425,6 +2431,8 @@ function renderPlacementTab(){
     document.getElementById('placementShareStat').textContent = 'No placement data available yet.';
     document.getElementById('placementTableHead').innerHTML = '';
     document.getElementById('placementTableBody').innerHTML = '';
+    document.getElementById('placementAllTableHead').innerHTML = '';
+    document.getElementById('placementAllTableBody').innerHTML = '';
     if(placementChartInst){ placementChartInst.destroy(); placementChartInst = null; }
     return;
   }
@@ -2487,6 +2495,26 @@ function renderPlacementTab(){
       + '</tr>';
   });
   document.getElementById('placementTableBody').innerHTML = rowsHtml;
+
+  // All-placements table: one row per placement for the whole selected date
+  // range (state.start/state.end, not the per-period rows above), sharing
+  // the same Winning/Testing/All filter as the table above it but not the
+  // Day/Month grouping — this table is a placement-vs-placement comparison,
+  // not a time series, so it always covers the full range in one pass.
+  const allRangeM = placementRowMetrics('all', state.start, state.end, tableSubType);
+  document.getElementById('placementAllTableHead').innerHTML = '<tr><th>Placement</th>'
+    + PLACEMENT_METRICS.map(m => '<th class="num">'+m.label+'</th>' + (m.key==='spend' ? '<th class="num">% Share</th>' : '')).join('') + '</tr>';
+  const placementsBySpend = placements.map(p => ({p, m: placementRowMetrics(p, state.start, state.end, tableSubType)}))
+    .sort((a,b) => b.m.spend - a.m.spend);
+  let allRowsHtml = '';
+  placementsBySpend.forEach(({p, m}) => {
+    const sharePct = allRangeM.spend ? (m.spend/allRangeM.spend*100) : 0;
+    const shareCell = isMetricMasked('spend') ? '—' : fmtPct(sharePct);
+    allRowsHtml += '<tr><td>'+esc(p)+'</td>'
+      + PLACEMENT_METRICS.map(pm => '<td class="num">'+fmtMoneyKey(m[pm.key], pm.key, pm.format)+'</td>' + (pm.key==='spend' ? '<td class="num">'+shareCell+'</td>' : '')).join('')
+      + '</tr>';
+  });
+  document.getElementById('placementAllTableBody').innerHTML = allRowsHtml;
 }
 function renderContentRequiredTab(){
   const {rows, refDate, last7start} = contentRequiredRows();
