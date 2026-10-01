@@ -3928,6 +3928,7 @@ const GOAL_METRICS = [
   {key:'total_first_visits', label:'Total First Visits', format:'num', kind:'additive', goodDir:'up'},
   {key:'cpm', label:'CPM', format:'currency', kind:'ratio', goodDir:'down'},
   {key:'ctr', label:'CTR', format:'pct', kind:'ratio', goodDir:'up'},
+  {key:'frequency', label:'Winning Frequency', format:'ratio', kind:'ratio', goodDir:'down'},
   {key:'lp_to_appt', label:'Website \u2192 Appointment %', format:'pct', kind:'ratio', goodDir:'up'},
 ];
 // Monthly goals, keyed by "YYYY-MM". Each month's targets are entered by
@@ -4028,6 +4029,16 @@ function goalAchievedValue(key, start, end){
       return winningSpend.impressions ? winningSpend.spend/winningSpend.impressions*1000 : 0;
     }
     case 'ctr': return winningSpend.impressions ? winningSpend.link_clicks/winningSpend.impressions*100 : 0;
+    // Same blended-vs-summed-daily tradeoff as Reach/Impressions/CPM above:
+    // frequency = impressions/reach, and reach summed day by day double
+    // counts anyone reached on more than one day, so the blended (de-
+    // duplicated) report's own reach is used for the month whenever one has
+    // been supplied for this exact range, falling back to the daily-summed
+    // winning-only figure otherwise.
+    case 'frequency': {
+      if(blended) return blended.reach ? blended.impressions/blended.reach : 0;
+      return winningSpend.reach ? winningSpend.impressions/winningSpend.reach : 0;
+    }
     case 'lp_to_appt': return web.visitors ? (appointmentsBooked||0)/web.visitors*100 : 0;
     default: return 0;
   }
@@ -4104,7 +4115,7 @@ function renderGoalTab(){
   if(isFuture){
     subtitle = monthLabel(month)+' hasn’t started yet (latest data is through '+liveToday+') — showing the target only, all stores and regions.';
   } else {
-    subtitle = (isPast ? 'Full month, ' : 'Day '+daysElapsed+' of '+daysInMonth+' in ') + month + ', all stores and regions. All Meta-derived Achieved-to-date figures (Spend, Reach, Impressions, Link Clicks, CPM, CTR) are winning campaigns only, testing budget excluded';
+    subtitle = (isPast ? 'Full month, ' : 'Day '+daysElapsed+' of '+daysInMonth+' in ') + month + ', all stores and regions. All Meta-derived Achieved-to-date figures (Spend, Reach, Impressions, Link Clicks, CPM, CTR, Frequency) are winning campaigns only, testing budget excluded';
     const blended = blendedForRange(monthStart);
     if(blended) subtitle += '. Reach, Impressions and CPM use Meta\'s blended report through '+blended.period_end+' (deduplicated, not summed daily)';
     if(appointmentsTotalRange(monthStart, today) !== null) subtitle += '. Appointments Booked uses the appointments tracker export, Appointments Scheduled uses the Ops report';
