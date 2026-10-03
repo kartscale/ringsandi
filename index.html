@@ -1179,7 +1179,7 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
 // 'meta'.
 const TAB_ORDER = ['overview','goal','stores','meta','daily','findings','forecast','actions','notifications','finance','reports'];
 const ACCESS_PINS = {
-  "9261": "all",
+  "8014": "all",
   // 8352 is the marketing team's login: every tab except Finance. It also
   // sees a value-level restriction (not a tab-level one) on the commercial
   // side of the business — see MASKED_METRIC_KEYS_8352 below, which hides
@@ -5553,19 +5553,20 @@ function mergeSavedReportsImport(parsed){
   saveSavedReportsList(existing);
   return added;
 }
-// One-time seed: PIN 9261 gets a pre-built "Soham's report" saved report
-// (Region, grouped by Day, Winning Spend + Testing Spend) the first time
-// that PIN is ever used on this file, so it's there without anyone needing
-// to build and save it by hand first. Gated behind its own migration flag,
-// checked (and only ever set) while actually logged in as 9261, rather than
-// just "does a report with this name already exist" — so someone
-// intentionally deleting it later doesn't have it silently reappear on the
-// next load, and a different PIN logging in first can't prematurely mark
-// the seed as done before 9261 has actually had the chance to receive it.
+// One-time seed: the admin PIN gets a pre-built "Soham's report" saved
+// report (Region, grouped by Day, Winning Spend + Testing Spend) the first
+// time that PIN is ever used on this file, so it's there without anyone
+// needing to build and save it by hand first. Gated behind its own
+// migration flag, checked (and only ever set) while actually logged in as
+// the admin PIN, rather than just "does a report with this name already
+// exist" — so someone intentionally deleting it later doesn't have it
+// silently reappear on the next load, and a different PIN logging in first
+// can't prematurely mark the seed as done before the admin PIN has actually
+// had the chance to receive it. (Admin PIN was 9261 before 2026-10-03; now 8014.)
 const SEED_SOHAMS_REPORT_FLAG = 'gos_seed_sohams_report_v1';
 function seedSavedReportsIfNeeded(){
   const pin = sessionStorage.getItem('gos_pin_key');
-  if(pin !== '9261') return;
+  if(pin !== '8014') return;
   if(localStorage.getItem(SEED_SOHAMS_REPORT_FLAG)) return;
   const list = loadSavedReports();
   if(!list.some(r => r.name === "Soham's report")){
