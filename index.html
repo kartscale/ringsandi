@@ -3949,6 +3949,11 @@ const GOALS_BY_MONTH = {
     website_visitors: 110880, appointments_booked: 388, appointments_scheduled: 388, crm_first_appt_to_visit: 203,
     crm_first_walkins: 366, total_first_visits: 579, cpm: 175, ctr: 1.35, lp_to_appt: 0.35,
   },
+  "2026-10": {
+    spend: 2350000, reach: 2937500, impressions: 11750000, link_clicks: 164500,
+    website_visitors: 125801, appointments_booked: 440, appointments_scheduled: 440, crm_first_appt_to_visit: 230,
+    crm_first_walkins: 415, total_first_visits: 657, cpm: 200, ctr: 1.80, frequency: 4, lp_to_appt: 0.35,
+  },
 };
 // A month with no explicit entry above (any month before the earliest one
 // set, or a future month past the latest one set) inherits the nearest
@@ -4146,12 +4151,23 @@ function renderGoalTab(){
       const targetText = isMasked ? fmtMoneyKey(target, mt.key, mt.format) : formatVal(target, mt.format);
       const achievedText = isMasked ? fmtMoneyKey(achieved, mt.key, mt.format) : formatVal(achieved, mt.format);
       const varianceText = isMasked ? fmtMoneyKey(variance, mt.key, mt.format) : formatVal(variance, mt.format);
+      // Rate metrics: the monthly target IS the daily target, so Goal to date
+      // equals the Monthly Goal; the month-to-date rate is the best estimate
+      // of the month-end rate, so Projected month end equals Achieved.
+      const variancePct = target ? (variance/target*100) : null;
+      const projected = achieved;
+      const projVsGoal = projected - target;
+      const projGood = mt.goodDir === 'down' ? projVsGoal <= 0 : projVsGoal >= 0;
+      const projectedText = isMasked ? fmtMoneyKey(projected, mt.key, mt.format) : formatVal(projected, mt.format);
+      const projVsGoalText = isMasked ? fmtMoneyKey(projVsGoal, mt.key, mt.format) : formatVal(projVsGoal, mt.format);
       tableHtml += '<tr><td>'+mt.label+'</td>'
         + '<td class="num">'+(target?targetText:'—')+'</td>'
-        + '<td class="num">—</td>'
+        + '<td class="num">'+(target?targetText:'—')+'</td>'
         + '<td class="num">'+mtFreshIcon+achievedText+'</td>'
         + '<td class="num">'+(target?('<span class="badge '+(isMasked?'neutral':varClass)+'">'+(isMasked?'':(variance>=0?'+':''))+varianceText+'</span>'):'—')+'</td>'
-        + '<td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
+        + '<td class="num">'+((isMasked||variancePct===null)?'—':fmtDelta(variancePct))+'</td>'
+        + '<td class="num">'+(target?projectedText:'—')+'</td>'
+        + '<td class="num">'+(target?('<span class="badge '+(isMasked?'neutral':(projGood?'good':'warn'))+'">'+(isMasked?'':(projGood?'On track, ':'Behind, ')+(projVsGoal>=0?'+':''))+projVsGoalText+'</span>'):'—')+'</td></tr>';
       return;
     }
     const goalToDate = target * (daysElapsed/daysInMonth);
@@ -5326,11 +5342,12 @@ function goalPacingRow(mt, month){
   const target = goals[mt.key] || 0;
   const achieved = isFuture ? 0 : goalAchievedValue(mt.key, monthStart, today);
   if(mt.kind === 'ratio'){
-    // Ratio metrics (CPM, CTR, Website->Appointment %) have no meaningful
+    // Ratio metrics (CPM, CTR, Frequency, Website->Appointment %): Goal to
+    // date = Monthly Goal and Projected = Achieved (MTD rate). Previously had no meaningful
     // "goal to date"/"projected month end" — the monthly target IS the daily
     // target, same as the Goal tab's own pacing table treats them.
     const variance = achieved - target;
-    return {monthly_goal: target, goal_to_date: null, achieved_to_date: achieved, variance, variance_pct: null, projected: null, projected_vs_goal: null};
+    return {monthly_goal: target, goal_to_date: target, achieved_to_date: achieved, variance, variance_pct: target ? variance/target*100 : null, projected: achieved, projected_vs_goal: achieved - target};
   }
   const goalToDate = target * (daysElapsed/daysInMonth);
   const variance = achieved - goalToDate;
