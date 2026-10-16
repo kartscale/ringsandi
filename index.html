@@ -878,7 +878,7 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
     <div class="tab-content" id="tab-daily">
       <div class="panel">
         <div class="panel-head"><div><h3>Period totals</h3><p>Winning campaigns only, for the selected region and range, vs the prior period</p></div></div>
-        <div class="table-scroll"><table><thead><tr><th>Metric</th><th class="num">This period</th><th class="num">Prior period</th><th class="num">Change</th></tr></thead><tbody id="dailyTotalsBody"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th>Metric</th><th class="num" id="dailyThisHead">This period</th><th class="num" id="dailyPriorHead">Prior period</th><th class="num">Change</th></tr></thead><tbody id="dailyTotalsBody"></tbody></table></div>
       </div>
       <div class="panel">
         <div class="panel-head"><div><h3>Daily breakdown</h3><p id="dailyRangeSubtitle">Every day in the selected range, most recent first. Spend/reach/impressions/CTR/link clicks are winning campaigns only. Reach is a raw daily sum (not deduplicated the way Meta's monthly blended export is).</p></div></div>
@@ -3196,6 +3196,12 @@ function renderDailyTab(){
     html += '<tr><td>'+rowFreshIcon+m.label+'</td><td class="num">'+fmtFn(val)+'</td><td class="num">'+fmtFn(priorVal)+'</td><td class="num">'+(change===null?'—':fmtDelta(change))+'</td></tr>';
   });
   document.getElementById('dailyTotalsBody').innerHTML = html;
+  // Date ranges shown in brackets under the column headings.
+  const dFmt = s => { const p = s.split('-'); return Number(p[2])+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(p[1])-1]+' '+p[0]; };
+  const rngTxt = (a,b) => '<br><span style="font-weight:400;font-size:10.5px;opacity:.75;">('+(a===b?dFmt(a):dFmt(a)+' to '+dFmt(b))+')</span>';
+  const thisHead = document.getElementById('dailyThisHead'), priorHead = document.getElementById('dailyPriorHead');
+  if(thisHead) thisHead.innerHTML = 'This period'+rngTxt(state.start, state.end);
+  if(priorHead) priorHead.innerHTML = 'Prior period'+rngTxt(prior.start, prior.end);
 
   // Header and body of the Daily breakdown table are both built from the
   // same PIN-filtered metric list, so a restricted login's columns never
