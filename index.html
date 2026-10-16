@@ -826,6 +826,27 @@ html[data-theme="dark"] .creative-sparkline{background:rgba(59,130,246,0.18);}
               <option value="day">By Day</option>
               <option value="month">By Month</option>
             </select>
+            <button class="creative-subtab-btn" id="placementCompareBtn" onclick="togglePlacementCompare()">Compare date ranges</button>
+          </div>
+          <div id="placementComparePanel" style="display:none;margin:0 0 16px;padding:12px;border:1px solid var(--line);border-radius:10px;">
+            <div class="panel-controls" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center;">
+              <strong>Range A</strong>
+              <input type="date" class="select-input" id="placementCmpAStart" onchange="renderPlacementCompare()">
+              <span>to</span>
+              <input type="date" class="select-input" id="placementCmpAEnd" onchange="renderPlacementCompare()">
+              <strong style="margin-left:12px;">Range B</strong>
+              <input type="date" class="select-input" id="placementCmpBStart" onchange="renderPlacementCompare()">
+              <span>to</span>
+              <input type="date" class="select-input" id="placementCmpBEnd" onchange="renderPlacementCompare()">
+              <button class="creative-subtab-btn" onclick="resetPlacementCompare()">Reset to selected range vs prior period</button>
+            </div>
+            <div class="panel-controls" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:flex-start;">
+              <details id="placementCmpPlacementsDet" class="select-input" style="padding:6px 10px;"><summary id="placementCmpPlacementsSum" style="cursor:pointer;">Placements</summary><div id="placementCmpPlacementsList" style="max-height:260px;overflow:auto;margin-top:6px;min-width:240px;"></div></details>
+              <details id="placementCmpMetricsDet" class="select-input" style="padding:6px 10px;"><summary id="placementCmpMetricsSum" style="cursor:pointer;">Metrics</summary><div id="placementCmpMetricsList" style="max-height:260px;overflow:auto;margin-top:6px;min-width:200px;"></div></details>
+              <span class="data-note" style="margin:0;align-self:center;">Pick up to 8 placements and up to 8 metrics at a time.</span>
+            </div>
+            <div class="data-note" id="placementCompareNote"></div>
+            <div class="table-scroll"><table><thead id="placementCompareHead"></thead><tbody id="placementCompareBody"></tbody></table></div>
           </div>
           <div class="table-scroll"><table><thead id="placementTableHead"></thead><tbody id="placementTableBody"></tbody></table></div>
         </div>
@@ -2536,6 +2557,86 @@ function renderPlacementTab(){
       + '</tr>';
   });
   document.getElementById('placementAllTableBody').innerHTML = allRowsHtml;
+  renderPlacementCompare();
+}
+// ---- Placement: compare two date ranges, for chosen placements x metrics ----
+let placementCompareOpen = false;
+const PLACEMENT_CMP_MAX = 8;
+let placementCmpPlacements = null;   // selected placement names (max 8)
+let placementCmpMetrics = ['spend','impressions','cpm','clicks','ctr','hook','engagement','results'];
+function togglePlacementCompare(){
+  placementCompareOpen = !placementCompareOpen;
+  document.getElementById('placementComparePanel').style.display = placementCompareOpen ? 'block' : 'none';
+  document.getElementById('placementCompareBtn').textContent = placementCompareOpen ? 'Hide comparison' : 'Compare date ranges';
+  if(placementCompareOpen){
+    if(!document.getElementById('placementCmpAStart').value) resetPlacementCompare(); else renderPlacementCompare();
+  }
+}
+function resetPlacementCompare(){
+  const prior = priorRangeFor(state.start, state.end);
+  document.getElementById('placementCmpAStart').value = state.start;
+  document.getElementById('placementCmpAEnd').value = state.end;
+  document.getElementById('placementCmpBStart').value = prior.start;
+  document.getElementById('placementCmpBEnd').value = prior.end;
+  renderPlacementCompare();
+}
+function onPlacementCmpPick(kind, value, checked){
+  const list = kind === 'p' ? placementCmpPlacements : placementCmpMetrics;
+  const i = list.indexOf(value);
+  if(checked && i === -1 && list.length < PLACEMENT_CMP_MAX) list.push(value);
+  if(!checked && i !== -1) list.splice(i,1);
+  renderPlacementCompare();
+}
+function placementCmpPickerHtml(kind, items, selected){
+  const full = selected.length >= PLACEMENT_CMP_MAX;
+  return items.map(it => {
+    const on = selected.indexOf(it.value) !== -1;
+    return '<label style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:12.5px;'+((full&&!on)?'opacity:.45;':'')+'"><input type="checkbox" '+(on?'checked ':'')+((full&&!on)?'disabled ':'')+'onchange="onPlacementCmpPick(\''+kind+'\', this.value, this.checked)" value="'+esc(it.value)+'"> '+esc(it.label)+'</label>';
+  }).join('');
+}
+function renderPlacementCompare(){
+  if(!placementCompareOpen) return;
+  const placements = placementList();
+  if(placementCmpPlacements === null) placementCmpPlacements = placements.slice(0, PLACEMENT_CMP_MAX);
+  placementCmpPlacements = placementCmpPlacements.filter(p => placements.indexOf(p) !== -1);
+  const metricDefs = PLACEMENT_METRICS.filter(m => placementCmpMetrics.indexOf(m.key) !== -1);
+  // Keep the open/closed state of the pickers while their contents refresh.
+  document.getElementById('placementCmpPlacementsList').innerHTML = placementCmpPickerHtml('p', placements.map(p => ({value:p,label:p})), placementCmpPlacements);
+  document.getElementById('placementCmpMetricsList').innerHTML = placementCmpPickerHtml('m', PLACEMENT_METRICS.map(m => ({value:m.key,label:m.label})), placementCmpMetrics);
+  document.getElementById('placementCmpPlacementsSum').textContent = 'Placements ('+placementCmpPlacements.length+'/'+PLACEMENT_CMP_MAX+')';
+  document.getElementById('placementCmpMetricsSum').textContent = 'Metrics ('+placementCmpMetrics.length+'/'+PLACEMENT_CMP_MAX+')';
+  const aS = document.getElementById('placementCmpAStart').value, aE = document.getElementById('placementCmpAEnd').value;
+  const bS = document.getElementById('placementCmpBStart').value, bE = document.getElementById('placementCmpBEnd').value;
+  const head = document.getElementById('placementCompareHead'), body = document.getElementById('placementCompareBody'), note = document.getElementById('placementCompareNote');
+  if(!aS || !aE || !bS || !bE || aS > aE || bS > bE){
+    note.textContent = 'Pick a valid start and end date for both ranges.';
+    head.innerHTML = ''; body.innerHTML = ''; return;
+  }
+  if(!metricDefs.length || !placementCmpPlacements.length){
+    note.textContent = 'Pick at least one placement and one metric.';
+    head.innerHTML = ''; body.innerHTML = ''; return;
+  }
+  const subTypeSel = document.getElementById('placementTableSubTypeSelect');
+  const subType = (subTypeSel && subTypeSel.value) || 'all';
+  const subLabel = subType === 'winning' ? 'Winning only' : (subType === 'testing' ? 'Testing only' : 'All (winning + testing)');
+  note.textContent = 'Range A: '+aS+' to '+aE+'  vs  Range B: '+bS+' to '+bE+'. '+subLabel+' (set by the filter above). Change is Range A compared with Range B.';
+  head.innerHTML = '<tr><th rowspan="2">Placement</th>'
+    + metricDefs.map(m => '<th class="num" colspan="3" style="text-align:center;">'+m.label+'</th>').join('') + '</tr>'
+    + '<tr>' + metricDefs.map(() => '<th class="num">A</th><th class="num">B</th><th class="num">Change</th>').join('') + '</tr>';
+  const rowFor = (label, p, isTotal) => {
+    const a = placementRowMetrics(p, aS, aE, subType), b = placementRowMetrics(p, bS, bE, subType);
+    let h = '<tr'+(isTotal?' style="font-weight:600;"':'')+'><td>'+esc(label)+'</td>';
+    metricDefs.forEach(pm => {
+      const masked = isMetricMasked(pm.key);
+      const av = a[pm.key], bv = b[pm.key];
+      const ch = (bv !== 0 && bv !== null && bv !== undefined) ? (av-bv)/Math.abs(bv)*100 : null;
+      h += '<td class="num">'+fmtMoneyKey(av, pm.key, pm.format)+'</td><td class="num">'+fmtMoneyKey(bv, pm.key, pm.format)+'</td><td class="num">'+((masked||ch===null)?'—':fmtDelta(ch))+'</td>';
+    });
+    return h + '</tr>';
+  };
+  let rows = rowFor('All placements (total)', 'all', true);
+  placementCmpPlacements.forEach(p => { rows += rowFor(p, p, false); });
+  body.innerHTML = rows;
 }
 function renderContentRequiredTab(){
   const {rows, refDate, last7start} = contentRequiredRows();
